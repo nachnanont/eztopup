@@ -2,19 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Search, Save, Edit, Eye, EyeOff, Image as ImageIcon, Loader2, ChevronDown, ChevronRight, Package } from 'lucide-react';
+import { Search, Save, Edit, Eye, EyeOff, Image as ImageIcon, Loader2, ChevronDown, ChevronRight, Star, X, Upload } from 'lucide-react';
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedGameId, setExpandedGameId] = useState(null); // เกมไหนกำลังเปิด Dropdown
+  const [expandedGameId, setExpandedGameId] = useState(null);
   
-  // State สำหรับแก้ไขเกม (ชื่อ/รูป)
+  // State สำหรับแก้ไขเกม
   const [editingGameId, setEditingGameId] = useState(null);
   const [gameForm, setGameForm] = useState({});
+  const [uploading, setUploading] = useState(false); // สถานะกำลังอัปโหลด
 
-  // State สำหรับแก้ไขแพคเกจ (เก็บแบบ Object: { 'gameId-pkgId': { ...ค่าที่แก้ } })
+  // State สำหรับแก้ไขแพคเกจ
   const [packageChanges, setPackageChanges] = useState({});
 
   useEffect(() => {
@@ -24,7 +25,6 @@ export default function AdminProducts() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. ดึงข้อมูลจาก API และ DB ทั้งหมด
       const res = await fetch('/api/products');
       if (!res.ok) throw new Error('API Error');
       const apiGames = await res.json();
@@ -32,11 +32,9 @@ export default function AdminProducts() {
       const { data: dbGames } = await supabase.from('products').select('*');
       const { data: dbPackages } = await supabase.from('package_settings').select('*');
 
-      // 2. ผสมข้อมูล (Merge)
       const mergedData = apiGames.map(game => {
         const gameSetting = dbGames?.find(s => s.game_id === game.name) || {};
         
-        // เตรียมข้อมูลแพคเกจ
         const rawPackages = game.services || game.items || [];
         const mergedPackages = rawPackages.map((pkg, idx) => {
             const pkgId = pkg.id || pkg.name || `pkg-${idx}`;
@@ -44,10 +42,9 @@ export default function AdminProducts() {
             
             return {
                 ...pkg,
-                id: pkgId, // ยึด ID ให้แน่นอน
+                id: pkgId,
                 name: pkg.name,
-                cost: Number(pkg.price || pkg.amount || 0), // ราคาต้นทุน
-                // การตั้งค่าของเรา
+                cost: Number(pkg.price || pkg.amount || 0),
                 is_active: pkgSetting.is_active !== false,
                 markup_type: pkgSetting.markup_type || 'fixed',
                 markup_value: Number(pkgSetting.markup_value || 0)
@@ -60,6 +57,7 @@ export default function AdminProducts() {
           custom_name: gameSetting.custom_name,
           custom_image: gameSetting.custom_image,
           is_active: gameSetting.is_active !== false,
+          is_popular: gameSetting.is_popular || false,
           packages: mergedPackages
         };
       });
@@ -74,32 +72,69 @@ export default function AdminProducts() {
     }
   };
 
-  // --- จัดการตัวเกม (Game Level) ---
   const toggleGameActive = async (game) => {
     const newState = !game.is_active;
     await supabase.from('products').upsert({ game_id: game.original_name, is_active: newState }, { onConflict: 'game_id' });
     setProducts(products.map(p => p.original_name === game.original_name ? { ...p, is_active: newState } : p));
   };
 
-  const saveGameSettings = async (game) => {
-    await supabase.from('products').upsert({
-        game_id: game.original_name,
-        custom_name: gameForm.custom_name,
-        custom_image: gameForm.custom_image
-    }, { onConflict: 'game_id' });
-    setEditingGameId(null);
-    fetchData(); // รีโหลดเพื่อความชัวร์
+  const togglePopular = async (game) => {
+    const newState = !game.is_popular;
+    await supabase.from('products').upsert({ game_id: game.original_name, is_popular: newState }, { onConflict: 'game_id' });
+    setProducts(products.map(p => p.original_name === game.original_name ? { ...p, is_popular: newState } : p));
   };
 
-  // --- จัดการแพคเกจ (Package Level) ---
+  // --- ฟังก์ชันบันทึกการตั้งค่าเกม (พร้อมอัปโหลดรูป) ---
+  const saveGameSettings = async (game) => {
+    setUploading(true);
+    try {
+        let finalImageUrl = gameForm.custom_image;
+
+        // 1. ถ้ามีการเลือกไฟล์ใหม่ ให้ Upload ก่อน
+        if (gameForm.file) {
+            const file = gameForm.file;
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+            
+            // Upload ลง Bucket 'products'
+            const { error: uploadError } = await supabase.storage
+                .from('products')
+                .upload(fileName, file);
+
+            if (uploadError) throw new Error('อัปโหลดรูปไม่สำเร็จ: ' + uploadError.message);
+
+            // ขอ Public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('products')
+                .getPublicUrl(fileName);
+                
+            finalImageUrl = publicUrl;
+        }
+
+        // 2. บันทึกลง Database
+        const { error } = await supabase.from('products').upsert({
+            game_id: game.original_name,
+            custom_name: gameForm.custom_name,
+            custom_image: finalImageUrl
+        }, { onConflict: 'game_id' });
+
+        if (error) throw error;
+
+        setEditingGameId(null);
+        fetchData(); // รีโหลดข้อมูล
+
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        setUploading(false);
+    }
+  };
+
   const handlePackageChange = (gameId, pkgId, field, value) => {
     const key = `${gameId}-${pkgId}`;
     setPackageChanges(prev => ({
         ...prev,
-        [key]: {
-            ...prev[key],
-            [field]: value
-        }
+        [key]: { ...prev[key], [field]: value }
     }));
   };
 
@@ -107,7 +142,6 @@ export default function AdminProducts() {
     const key = `${gameId}-${pkg.id}`;
     const changes = packageChanges[key] || {};
     
-    // เอาค่าใหม่ ถ้าไม่มีใช้ค่าเดิม
     const payload = {
         game_id: gameId,
         package_id: pkg.id,
@@ -120,7 +154,6 @@ export default function AdminProducts() {
 
     if (error) alert('บันทึกไม่ได้: ' + error.message);
     else {
-        // ลบ changes ที่บันทึกแล้วออก
         const newChanges = { ...packageChanges };
         delete newChanges[key];
         setPackageChanges(newChanges);
@@ -129,7 +162,6 @@ export default function AdminProducts() {
   };
 
   const togglePackageActive = async (gameId, pkg) => {
-      // Toggle ทันทีแล้วบันทึกเลย
       const newState = !pkg.is_active;
       await supabase.from('package_settings').upsert({
           game_id: gameId,
@@ -145,7 +177,7 @@ export default function AdminProducts() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">จัดการสินค้า & ราคา (รายแพคเกจ)</h1>
+      <h1 className="text-2xl font-bold text-slate-800 mb-6">จัดการสินค้า & ราคา</h1>
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6">
         <div className="relative">
@@ -166,78 +198,130 @@ export default function AdminProducts() {
         ) : filteredProducts.map((game) => (
             <div key={game.original_name} className={`bg-white border rounded-xl overflow-hidden transition-all ${!game.is_active ? 'opacity-70 border-slate-200 bg-slate-50' : 'border-slate-200 shadow-sm'}`}>
                 
-                {/* --- Game Header Row --- */}
-                <div className="p-4 flex items-center gap-4">
+                <div className="p-4 flex flex-col md:flex-row md:items-center gap-4">
                     <button 
                         onClick={() => setExpandedGameId(expandedGameId === game.original_name ? null : game.original_name)}
-                        className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
+                        className="hidden md:block p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
                     >
                         {expandedGameId === game.original_name ? <ChevronDown /> : <ChevronRight />}
                     </button>
 
                     {/* รูปเกม */}
-                    <div className="w-12 h-12 rounded-lg bg-slate-100 relative overflow-hidden border border-slate-200 shrink-0">
-                        {(game.custom_image || game.image) ? (
+                    <div className="w-16 h-16 md:w-12 md:h-12 rounded-lg bg-slate-100 relative overflow-hidden border border-slate-200 shrink-0 mx-auto md:mx-0">
+                        {editingGameId === game.original_name && gameForm.previewUrl ? (
+                             <img src={gameForm.previewUrl} alt="preview" className="w-full h-full object-cover" />
+                        ) : (game.custom_image || game.image) ? (
                             <img src={game.custom_image || game.image} alt="icon" className="w-full h-full object-cover" />
                         ) : <ImageIcon className="absolute inset-0 m-auto text-slate-300" />}
                     </div>
 
-                    {/* ชื่อเกม & สถานะ */}
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0 text-center md:text-left">
                         {editingGameId === game.original_name ? (
-                            <div className="flex gap-2">
+                            // --- โหมดแก้ไข ---
+                            <div className="flex flex-col gap-2">
                                 <input 
-                                    className="border rounded px-2 py-1 text-sm font-bold" 
+                                    className="border rounded px-2 py-1.5 text-sm font-bold w-full md:w-64" 
                                     defaultValue={game.custom_name || game.original_name}
                                     onChange={e => setGameForm({...gameForm, custom_name: e.target.value})}
+                                    placeholder="ชื่อเกม"
                                 />
-                                <input 
-                                    className="border rounded px-2 py-1 text-xs w-full max-w-xs" 
-                                    placeholder="URL รูปภาพ"
-                                    defaultValue={game.custom_image || game.image}
-                                    onChange={e => setGameForm({...gameForm, custom_image: e.target.value})}
-                                />
-                                <button onClick={() => saveGameSettings(game)} className="p-1 bg-green-100 text-green-600 rounded"><Save size={16}/></button>
-                                <button onClick={() => setEditingGameId(null)} className="p-1 bg-slate-100 text-slate-600 rounded"><X size={16}/></button>
+                                <div className="flex items-center gap-2">
+                                    <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 border border-slate-200 transition-colors">
+                                        <Upload size={14} />
+                                        {gameForm.file ? 'เลือกใหม่' : 'เปลี่ยนรูป'}
+                                        <input 
+                                            type="file" 
+                                            accept="image/*" 
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files[0];
+                                                if(file) {
+                                                    setGameForm({
+                                                        ...gameForm, 
+                                                        file: file,
+                                                        previewUrl: URL.createObjectURL(file)
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                    <span className="text-xs text-slate-400 truncate max-w-[150px]">
+                                        {gameForm.file ? gameForm.file.name : 'ยังไม่เลือกไฟล์'}
+                                    </span>
+                                </div>
+                                <div className="flex gap-2 mt-1 justify-center md:justify-start">
+                                    <button 
+                                        onClick={() => saveGameSettings(game)} 
+                                        disabled={uploading}
+                                        className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center gap-1"
+                                    >
+                                        {uploading ? <Loader2 className="animate-spin" size={12}/> : <Save size={14}/>} บันทึก
+                                    </button>
+                                    <button onClick={() => setEditingGameId(null)} className="px-3 py-1 bg-slate-200 text-slate-600 rounded text-xs hover:bg-slate-300">ยกเลิก</button>
+                                </div>
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-slate-800">{game.custom_name || game.original_name}</h3>
-                                {!game.is_active && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">ปิดใช้งาน</span>}
+                            // --- โหมดแสดงผล ---
+                            <div className="flex flex-col md:flex-row items-center gap-2">
+                                <h3 className="font-bold text-slate-800 truncate text-lg md:text-base">{game.custom_name || game.original_name}</h3>
+                                {!game.is_active && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full whitespace-nowrap">ปิดใช้งาน</span>}
+                                {game.is_popular && <span className="text-[10px] bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1"><Star size={10} fill="currentColor"/> ยอดฮิต</span>}
                                 <button 
                                     onClick={() => {
                                         setEditingGameId(game.original_name);
-                                        setGameForm({ custom_name: game.custom_name || game.original_name, custom_image: game.custom_image || game.image });
+                                        setGameForm({ 
+                                            custom_name: game.custom_name || game.original_name, 
+                                            custom_image: game.custom_image || game.image 
+                                        });
                                     }}
-                                    className="text-slate-300 hover:text-blue-500"
+                                    className="text-slate-300 hover:text-blue-500 p-1"
                                 >
-                                    <Edit size={14} />
+                                    <Edit size={16} />
                                 </button>
                             </div>
                         )}
-                        <div className="text-xs text-slate-400 mt-0.5">{game.packages.length} แพคเกจ</div>
+                        <div className="text-xs text-slate-400 mt-1 md:mt-0.5">{game.packages.length} แพคเกจ</div>
                     </div>
 
-                    {/* Toggle Game */}
+                    {/* ปุ่ม Action */}
+                    <div className="flex gap-2 mt-2 md:mt-0 justify-center">
+                        <button 
+                            onClick={() => togglePopular(game)}
+                            className={`p-2 rounded-full transition-colors ${game.is_popular ? 'text-amber-500 bg-amber-50' : 'text-slate-300 hover:bg-slate-100'}`}
+                            title={game.is_popular ? 'ยกเลิกยอดฮิต' : 'ตั้งเป็นยอดฮิต'}
+                        >
+                            <Star size={20} fill={game.is_popular ? "currentColor" : "none"} />
+                        </button>
+
+                        <button 
+                            onClick={() => toggleGameActive(game)}
+                            className={`p-2 rounded-lg transition-colors ${game.is_active ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}
+                            title={game.is_active ? 'ซ่อนทั้งเกม' : 'แสดงเกม'}
+                        >
+                            {game.is_active ? <Eye size={20} /> : <EyeOff size={20} />}
+                        </button>
+                    </div>
+                    
+                    {/* ปุ่มเปิด Accordion บนมือถือ */}
                     <button 
-                        onClick={() => toggleGameActive(game)}
-                        className={`p-2 rounded-lg transition-colors ${game.is_active ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}
-                        title={game.is_active ? 'ซ่อนทั้งเกม' : 'แสดงเกม'}
+                        onClick={() => setExpandedGameId(expandedGameId === game.original_name ? null : game.original_name)}
+                        className="md:hidden w-full mt-2 py-2 bg-slate-50 text-slate-500 rounded-lg flex items-center justify-center gap-2 text-sm"
                     >
-                        {game.is_active ? <Eye size={20} /> : <EyeOff size={20} />}
+                        {expandedGameId === game.original_name ? 'ซ่อนรายการแพคเกจ' : 'ดูรายการแพคเกจ'} 
+                        {expandedGameId === game.original_name ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
                     </button>
                 </div>
 
-                {/* --- Packages Dropdown (Accordion) --- */}
+                {/* --- Packages Dropdown --- */}
                 {expandedGameId === game.original_name && (
-                    <div className="border-t border-slate-100 bg-slate-50/50 p-4">
-                        <table className="w-full text-sm">
+                    <div className="border-t border-slate-100 bg-slate-50/50 p-4 overflow-x-auto">
+                        <table className="w-full text-sm min-w-[600px]">
                             <thead>
                                 <tr className="text-slate-500 text-left">
                                     <th className="pb-2 pl-2">ชื่อแพคเกจ</th>
-                                    <th className="pb-2">ราคาทุน (API)</th>
-                                    <th className="pb-2">ตั้งค่าบวกกำไร (Markup)</th>
-                                    <th className="pb-2">ราคาขายจริง</th>
+                                    <th className="pb-2">ราคาทุน</th>
+                                    <th className="pb-2">บวกกำไร</th>
+                                    <th className="pb-2">ราคาขาย</th>
                                     <th className="pb-2 text-center">สถานะ</th>
                                     <th className="pb-2 text-right">บันทึก</th>
                                 </tr>
@@ -247,17 +331,14 @@ export default function AdminProducts() {
                                     const key = `${game.original_name}-${pkg.id}`;
                                     const changes = packageChanges[key] || {};
                                     
-                                    // ค่าปัจจุบัน (จาก DB หรือ Changes)
                                     const currentMarkupType = changes.markup_type || pkg.markup_type;
                                     const currentMarkupValue = changes.markup_value !== undefined ? changes.markup_value : pkg.markup_value;
                                     
-                                    // คำนวณราคาขาย Preview
                                     let sellingPrice = pkg.cost;
                                     if(currentMarkupType === 'percent') sellingPrice += (pkg.cost * currentMarkupValue / 100);
                                     else sellingPrice += Number(currentMarkupValue);
                                     sellingPrice = Math.ceil(sellingPrice);
 
-                                    // ตรวจสอบว่ามีการแก้ไขไหม
                                     const isModified = packageChanges[key] !== undefined;
 
                                     return (
@@ -265,7 +346,6 @@ export default function AdminProducts() {
                                             <td className="py-3 pl-2 font-medium text-slate-700">{pkg.name}</td>
                                             <td className="py-3 text-slate-500">฿{pkg.cost.toLocaleString()}</td>
                                             
-                                            {/* ช่องแก้ราคา */}
                                             <td className="py-3">
                                                 <div className="flex items-center gap-2">
                                                     <span className="font-bold text-green-600 text-xs">+</span>
@@ -288,7 +368,6 @@ export default function AdminProducts() {
 
                                             <td className="py-3 font-bold text-blue-600">฿{sellingPrice.toLocaleString()}</td>
                                             
-                                            {/* Toggle Package */}
                                             <td className="py-3 text-center">
                                                 <button 
                                                     onClick={() => togglePackageActive(game.original_name, pkg)}
@@ -298,7 +377,6 @@ export default function AdminProducts() {
                                                 </button>
                                             </td>
 
-                                            {/* ปุ่ม Save */}
                                             <td className="py-3 text-right">
                                                 {isModified && (
                                                     <button 

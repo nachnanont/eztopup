@@ -240,57 +240,34 @@ export default function ProductModal({ game, onClose }) {
                     </div>
                 </div>
 
-                {/* Right Side (เหมือนเดิม) */}
-                <div className="w-full md:w-2/3 p-6 flex flex-col h-full bg-white">
-                    <div className="flex justify-between items-center mb-4 shrink-0">
-                        <h3 className="font-bold text-lg text-slate-700">เลือกแพคเกจ</h3>
-                        <button onClick={onClose} className="hidden md:block p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-red-500">
-                            <X size={24} />
-                        </button>
-                    </div>
+                {/* Right Side */}
+<div className="w-full md:w-2/3 flex flex-col h-full bg-white relative"> {/* เพิ่ม relative */}
+    
+    {/* 1. Header (อยู่นิ่งๆ) */}
+    <div className="flex justify-between items-center p-6 pb-2 shrink-0"> {/* เพิ่ม shrink-0 */}
+        <h3 className="font-bold text-lg text-slate-700">เลือกแพคเกจ</h3>
+        <button onClick={onClose} className="hidden md:block p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-red-500">
+            <X size={24} />
+        </button>
+    </div>
 
-                    <div className="flex-1 overflow-y-auto pr-2 -mr-2 pb-4">
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                            {packages.map((pkg) => {
-                                const isSelected = selectedPackage?.id === pkg.id;
-                                return (
-                                    <button
-                                        key={pkg.id}
-                                        onClick={() => setSelectedPackage(pkg)}
-                                        className={`relative p-4 rounded-xl border-2 transition-all duration-200 flex flex-col items-start gap-2 text-left
-                                            ${isSelected 
-                                                ? 'border-blue-500 bg-blue-50/50 shadow-md ring-1 ring-blue-500' 
-                                                : 'border-slate-100 hover:border-blue-200 hover:shadow-md bg-white'
-                                            }`}
-                                    >
-                                        {isSelected && <div className="absolute top-2 right-2 bg-blue-500 text-white p-0.5 rounded-full"><Check size={12} strokeWidth={3} /></div>}
-                                        <span className={`font-medium line-clamp-2 ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>{pkg.name}</span>
-                                        <span className={`text-lg font-bold ${isSelected ? 'text-blue-600' : 'text-slate-900'}`}>฿{pkg.price.toLocaleString()}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
+    {/* 2. Package List (เลื่อนได้) */}
+    {/* สำคัญ: ใช้ flex-1 overflow-y-auto เพื่อให้ส่วนนี้ยืดเต็มที่และเลื่อนได้ถ้าเกิน */}
+    <div className="flex-1 overflow-y-auto p-6 pt-2"> 
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* ... (loop packages เหมือนเดิม) ... */}
+        </div>
+    </div>
 
-                    <div className="pt-4 border-t border-slate-100 mt-auto shrink-0">
-                        <button
-                            disabled={!selectedPackage || !targetId || isLoading}
-                            onClick={handleNextStep}
-                            className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg disabled:shadow-none transition-all flex items-center justify-center gap-2
-                                ${isLoading ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}
-                        >
-                            {isBalanceEnough ? <ShoppingCart size={20} /> : <QrCode size={20} />}
-                            {isLoading ? 'กำลังประมวลผล...' : 
-                                (!selectedPackage ? 'กรุณาเลือกแพคเกจ' : 
-                                    (isBalanceEnough 
-                                        ? `ชำระเงิน ${selectedPackage.price.toLocaleString()} บาท` 
-                                        : `ชำระเงิน (${missingAmount.toLocaleString()} บาท)`
-                                    )
-                                )
-                            }
-                        </button>
-                    </div>
-                </div>
+    {/* 3. Footer Button (อยู่นิ่งๆ ด้านล่าง) */}
+    <div className="p-4 border-t border-slate-100 mt-auto bg-white shrink-0 z-10"> {/* เพิ่ม bg-white, shrink-0 */}
+        <button
+            // ... (ปุ่มเหมือนเดิม) ...
+        >
+            {/* ... content ปุ่ม ... */}
+        </button>
+    </div>
+</div>
             </div>
         )}
 

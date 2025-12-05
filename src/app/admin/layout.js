@@ -14,7 +14,8 @@ import {
   Menu,
   X,
   Wallet,
-  MessageSquare
+  MessageSquare,
+  User // <-- เพิ่ม User เข้ามาในรายการนี้ (โดยไม่ต้องมีจุด ...)
 } from 'lucide-react';
 
 export default function AdminLayout({ children }) {
@@ -32,13 +33,12 @@ export default function AdminLayout({ children }) {
     // 1. ดึงจำนวนเริ่มต้น
     fetchUnreadCount();
 
-    // 2. ฟัง Realtime (ถ้ามีการส่งข้อความใหม่ หรือมีการกดอ่านข้อความ)
+    // 2. ฟัง Realtime
     const channel = supabase.channel('admin-sidebar-badge')
         .on(
             'postgres_changes', 
             { event: '*', schema: 'public', table: 'messages' }, 
             () => {
-                // เมื่อมีความเคลื่อนไหวในตาราง messages ให้ดึงตัวเลขใหม่ทันที
                 fetchUnreadCount();
             }
         )
@@ -48,10 +48,9 @@ export default function AdminLayout({ children }) {
   }, []);
 
   const fetchUnreadCount = async () => {
-    // นับจำนวนข้อความที่ is_read = false และคนส่งคือ 'user'
     const { count, error } = await supabase
       .from('messages')
-      .select('*', { count: 'exact', head: true }) // head: true คือโหลดแค่จำนวน ไม่เอาเนื้อหา (เร็วมาก)
+      .select('*', { count: 'exact', head: true })
       .eq('is_read', false)
       .eq('sender_role', 'user');
 
@@ -96,12 +95,12 @@ export default function AdminLayout({ children }) {
 
   const menuItems = [
     { name: 'ภาพรวม', icon: LayoutDashboard, path: '/admin' },
-    // เมนูแชท (ใส่ Logic แจ้งเตือนไว้ตรงนี้)
+    { name: 'จัดการสมาชิก', icon: User, path: '/admin/users' }, // <-- เมนูใหม่ที่เพิ่งเพิ่ม
     { 
         name: 'ตอบแชทลูกค้า', 
         icon: MessageSquare, 
         path: '/admin/chat',
-        badge: unreadChatCount // ส่งจำนวนไปโชว์
+        badge: unreadChatCount
     }, 
     { name: 'จัดการคำสั่งซื้อ', icon: ShoppingBag, path: '/admin/orders' },
     { name: 'รายการเติมเงิน', icon: Wallet, path: '/admin/topups' },
@@ -145,7 +144,7 @@ export default function AdminLayout({ children }) {
                     {item.name}
                   </div>
 
-                  {/* Badge แจ้งเตือน (ถ้ามีตัวเลข) */}
+                  {/* Badge แจ้งเตือน */}
                   {item.badge > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
                         {item.badge > 99 ? '99+' : item.badge}

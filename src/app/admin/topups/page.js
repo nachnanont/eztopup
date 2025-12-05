@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Check, X, RefreshCw, Wallet, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Check, X, RefreshCw, Clock, Search } from 'lucide-react';
 
 export default function AdminTopups() {
   const [topups, setTopups] = useState([]);
@@ -14,10 +14,9 @@ export default function AdminTopups() {
 
   const fetchTopups = async () => {
     setLoading(true);
-    // ดึงรายการเติมเงิน + ชื่อคนเติม
     const { data } = await supabase
       .from('topups')
-      .select('*, profiles:user_id (username, email, wallet_balance)')
+      .select('*, profiles:user_id (username, email, wallet_balance, points)')
       .order('created_at', { ascending: false });
       
     if (data) setTopups(data);
@@ -25,10 +24,13 @@ export default function AdminTopups() {
   };
 
   const handleApprove = async (topup) => {
-    if (!confirm(`ยืนยันอนุมัติยอดเงิน ${topup.amount} บาท ให้ ${topup.profiles.username}?`)) return;
+    // คำนวณคะแนน (1% ของยอดเติม)
+    const pointsToAdd = Math.floor(topup.amount * 0.01);
+    
+    if (!confirm(`ยืนยันอนุมัติยอด ${topup.amount} บาท?\nลูกค้าจะได้ ${pointsToAdd} คะแนน`)) return;
 
     try {
-        // 1. อัปเดตสถานะ Topup เป็น success
+        // 1. อัปเดตสถานะ Topup
         const { error: updateTopupError } = await supabase
             .from('topups')
             .update({ status: 'success' })
@@ -36,26 +38,28 @@ export default function AdminTopups() {
             
         if (updateTopupError) throw updateTopupError;
 
-        // 2. บวกเงินให้ User (Logic สำคัญ!)
-        // ดึงเงินล่าสุดก่อน
+        // 2. บวกเงินและคะแนนให้ User
         const { data: userData } = await supabase
             .from('profiles')
-            .select('wallet_balance')
+            .select('wallet_balance, points')
             .eq('id', topup.user_id)
             .single();
             
         const newBalance = (Number(userData.wallet_balance) || 0) + Number(topup.amount);
+        const newPoints = (Number(userData.points) || 0) + pointsToAdd;
 
-        // อัปเดตเงิน
         const { error: updateProfileError } = await supabase
             .from('profiles')
-            .update({ wallet_balance: newBalance })
+            .update({ 
+                wallet_balance: newBalance,
+                points: newPoints
+            })
             .eq('id', topup.user_id);
 
         if (updateProfileError) throw updateProfileError;
 
-        alert("✅ อนุมัติสำเร็จ! เติมเงินให้ลูกค้าเรียบร้อยแล้ว");
-        fetchTopups(); // รีโหลดตาราง
+        alert(`✅ อนุมัติสำเร็จ!\nเพิ่มเงิน ${topup.amount} บาท\nเพิ่มคะแนน ${pointsToAdd} pts`);
+        fetchTopups();
 
     } catch (error) {
         alert("เกิดข้อผิดพลาด: " + error.message);
@@ -64,12 +68,7 @@ export default function AdminTopups() {
 
   const handleReject = async (id) => {
     if (!confirm("ยืนยันปฏิเสธรายการนี้?")) return;
-    
-    const { error } = await supabase
-        .from('topups')
-        .update({ status: 'cancelled' })
-        .eq('id', id);
-
+    const { error } = await supabase.from('topups').update({ status: 'cancelled' }).eq('id', id);
     if (!error) fetchTopups();
   };
 
@@ -89,6 +88,7 @@ export default function AdminTopups() {
               <th className="p-4">เวลา</th>
               <th className="p-4">ลูกค้า</th>
               <th className="p-4">ยอดเติม</th>
+              <th className="p-4">จะได้แต้ม</th>
               <th className="p-4 text-center">สถานะ</th>
               <th className="p-4 text-right">จัดการ</th>
             </tr>
@@ -103,9 +103,8 @@ export default function AdminTopups() {
                     <div className="font-bold text-slate-800">{item.profiles?.username}</div>
                     <div className="text-xs text-slate-400">คงเหลือ: ฿{item.profiles?.wallet_balance?.toLocaleString()}</div>
                 </td>
-                <td className="p-4">
-                    <div className="font-bold text-green-600 text-lg">+฿{item.amount.toLocaleString()}</div>
-                </td>
+                <td className="p-4 font-bold text-green-600 text-lg">+฿{item.amount.toLocaleString()}</td>
+                <td className="p-4 text-amber-500 font-medium">+{Math.floor(item.amount * 0.01)} pts</td>
                 <td className="p-4 text-center">
                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
                         ${item.status === 'success' ? 'bg-green-100 text-green-700' :
@@ -119,7 +118,7 @@ export default function AdminTopups() {
                 <td className="p-4 text-right">
                     {item.status === 'pending' && (
                         <div className="flex justify-end gap-2">
-                            <button onClick={() => handleApprove(item)} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100" title="อนุมัติ (เติมเงินเข้า)">
+                            <button onClick={() => handleApprove(item)} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100" title="อนุมัติ">
                                 <Check size={20} />
                             </button>
                             <button onClick={() => handleReject(item.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100" title="ปฏิเสธ">

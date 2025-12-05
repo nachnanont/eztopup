@@ -11,23 +11,18 @@ module.exports = {
         sans: ['var(--font-kanit)', 'sans-serif'],
       },
       colors: {
-        // พื้นหลังหลัก (ครีมเทา)
+        // สีพื้นหลังหลัก (คงเดิม ตามที่ขอ)
         main: '#F0F2E9', 
         
-        // สีหลัก (Primary) -> เปลี่ยนจากฟ้า เป็น "ม่วงเกมเมอร์"
+        // ธีมใหม่: ม่วงอมชมพู
         primary: {
-          DEFAULT: '#7C3AED', // Violet-600
-          hover: '#6D28D9',   // Violet-700 (ตอนเอาเมาส์ชี้)
+          DEFAULT: '#C026D3', // Fuchsia-600 (ม่วงสด)
+          hover: '#A21CAF',   // Fuchsia-700
         },
-
-        // สีรอง/สีตัด (Secondary/Accent) -> "เหลืองอำพัน/ส้ม" (เพิ่มพลังงาน)
-        accent: {
-          DEFAULT: '#F59E0B', // Amber-500
-          hover: '#D97706',   // Amber-600
+        secondary: {
+          DEFAULT: '#DB2777', // Pink-600 (ชมพูเข้ม)
+          hover: '#BE185D',   // Pink-700
         },
-        
-        // สียืนยัน/สำเร็จ (ใช้สีเขียวสดใสหน่อย)
-        success: '#10B981', // Emerald-500
       },
     },
   },

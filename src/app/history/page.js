@@ -1,9 +1,12 @@
 'use client';
 
+// เพิ่มบรรทัดนี้เพื่อแก้ปัญหา Build Error ครับ
+export const dynamic = 'force-dynamic'; 
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Navbar from '@/components/Navbar';
-import { Clock, CheckCircle, XCircle, ShoppingBag, ArrowRight } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, ShoppingBag } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function HistoryPage() {
@@ -16,19 +19,17 @@ export default function HistoryPage() {
   }, []);
 
   const fetchHistory = async () => {
-    // 1. เช็ค User
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
         router.push('/login');
         return;
     }
 
-    // 2. ดึงข้อมูลออเดอร์ของตัวเอง
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('orders')
       .select('*')
-      .eq('user_id', user.id) // ดึงเฉพาะของตัวเอง
-      .order('created_at', { ascending: false }); // ใหม่สุดขึ้นก่อน
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
 
     if (data) setOrders(data);
     setLoading(false);

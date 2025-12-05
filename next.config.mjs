@@ -4,11 +4,15 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**.supabase.co', // อนุญาตทุกโดเมนของ Supabase
+        hostname: '**.supabase.co', // อนุญาต Supabase ทุกโปรเจกต์
       },
       {
         protocol: 'https',
-        hostname: 'middle-pay.com', // เผื่อรูปมาจาก API
+        hostname: 'ttxvgxebknibhtvakczf.supabase.co', // ระบุโปรเจกต์คุณโดยเฉพาะ (เพื่อความชัวร์)
+      },
+      {
+        protocol: 'https',
+        hostname: 'middle-pay.com', // อนุญาตรูปจาก API เกม
       }
     ],
   },

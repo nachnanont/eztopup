@@ -7,23 +7,31 @@ import { getGameImage } from '@/lib/imageMap';
 import ProductModal from './ProductModal';
 import { supabase } from '@/lib/supabase';
 
-// เพิ่ม prop 'category'
-export default function GameList({ products: initialProducts, category }) {
+export default function GameList({ products: initialProducts }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
   const [products, setProducts] = useState(initialProducts || []);
 
   useEffect(() => {
-    // โหลด Setting เหมือนเดิม
     const syncSettings = async () => {
         const { data: gameSettings } = await supabase.from('products').select('*');
         const { data: pkgSettings } = await supabase.from('package_settings').select('*');
 
-        if (gameSettings || pkgSettings) {
+        if (gameSettings) {
             const merged = initialProducts.map(game => {
-                const gSet = gameSettings?.find(s => s.game_id === game.name) || {};
+                const gSet = gameSettings.find(s => s.game_id === game.name) || {};
                 
-                const rawPackages = game.services || game.items || [];
+                const rawPackages = game.services || game.items || game.products || [];
+                
+                if (!rawPackages || rawPackages.length === 0) {
+                    return {
+                        ...game,
+                        ...gSet,
+                        is_active: gSet.is_active !== false,
+                        image: gSet.custom_image || game.image || getGameImage(game.name)
+                    };
+                }
+
                 const mergedPackages = rawPackages.map((pkg, idx) => {
                     const pkgId = pkg.id || pkg.name || `pkg-${idx}`;
                     const pSet = pkgSettings?.find(s => s.game_id === game.name && s.package_id === pkgId) || {};
@@ -40,18 +48,19 @@ export default function GameList({ products: initialProducts, category }) {
                         ...pkg,
                         id: pkgId,
                         price: Math.ceil(finalPrice),
-                        is_active: pSet.is_active !== false
+                        is_active: pSet.is_active !== false,
+                        description: pSet.description
                     };
                 });
-
-                const activePackages = mergedPackages.filter(p => p.is_active);
 
                 return {
                     ...game,
                     ...gSet,
                     is_active: gSet.is_active !== false,
-                    services: game.services ? activePackages : undefined,
-                    items: game.items ? activePackages : undefined
+                    image: gSet.custom_image || game.image || getGameImage(game.name),
+                    services: game.services ? mergedPackages.filter(p => p.is_active) : undefined,
+                    items: game.items ? mergedPackages.filter(p => p.is_active) : undefined,
+                    products: game.products ? mergedPackages.filter(p => p.is_active) : undefined
                 };
             });
             setProducts(merged.filter(p => p.is_active));
@@ -60,86 +69,98 @@ export default function GameList({ products: initialProducts, category }) {
     syncSettings();
   }, [initialProducts]);
 
-  // --- LOGIC การกรองใหม่ ---
-  const filteredGames = products.filter((p) => {
-    // 1. กรองตามชื่อ (Search)
-    const nameMatch = (p.custom_name || p.name || '').toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // 2. กรองตามหมวดหมู่ (Category)
-    // ถ้า category เป็น 'all' หรือค่าว่าง ให้โชว์หมด (หรือเฉพาะเกม ถ้าอยากให้หน้าแรกเป็นเกม)
-    // แต่ปกติ Navbar ส่งมาเป็น 'game' หรือ 'premium'
-    let catMatch = true;
-    if (category === 'game') {
-        catMatch = p.category !== 'premium'; // เอาที่ไม่ใช่ premium
-    } else if (category === 'premium') {
-        catMatch = p.category === 'premium'; // เอาเฉพาะ premium
-    }
+  // --- แยกเกมยอดฮิต ---
+  const popularGames = products.filter(p => p.is_popular).slice(0, 8);
 
-    return nameMatch && catMatch;
+  // --- กรองเกมทั้งหมด (Search) ---
+  const filteredGames = products.filter((p) => {
+    const name = p.custom_name || p.name || '';
+    return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   return (
     <div className="w-full">
+      
+      {/* --- ส่วนแสดงเกมยอดฮิต (ย้ายมาไว้ตรงนี้ เพื่อให้กดแล้วเด้ง Popup) --- */}
+      {popularGames.length > 0 && !searchTerm && (
+        <div className="mb-10">
+            <div className="flex items-center gap-2 mb-4">
+                <span className="text-2xl">🔥</span>
+                <h2 className="text-xl font-bold text-slate-800">เกมยอดฮิต</h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {popularGames.map((game, idx) => (
+                    <div 
+                        key={idx}
+                        // จุดสำคัญ: สั่งให้เปิด Modal เหมือนกันเป๊ะ
+                        onClick={() => setSelectedGame(game)}
+                        className="group bg-white p-3 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-3 cursor-pointer"
+                    >
+                        <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-slate-100">
+                            {game.image ? (
+                                <Image src={game.image} alt={game.name} fill className="object-cover" />
+                            ) : null}
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="font-bold text-sm text-slate-700 truncate group-hover:text-blue-600 transition-colors">
+                                {game.custom_name || game.name}
+                            </h3>
+                            <p className="text-xs text-slate-400 truncate"></p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
+
+      {/* ส่วนหัวข้อรายการปกติ */}
+      <div className="flex items-center gap-3 mb-6">
+           <div className="w-1.5 h-8 mt-10 bg-blue-600 rounded-full"></div>
+           <h1 className="text-2xl font-bold text-slate-800">บริการเติมเกมออนไลน์</h1>
+      </div>
+
       {/* Search Filter */}
       <div className="relative mb-8 max-w-md mx-auto">
         <input
           type="text"
-          placeholder={category === 'premium' ? "ค้นหาแอป..." : "ค้นหาเกม..."}
-          className="w-full pl-12 pr-4 py-3 rounded-full border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-medium"
+          placeholder="ค้นหาเกม..."
+          className="w-full pl-12 pr-4 py-3 rounded-full border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
       </div>
 
-      {/* Grid แสดงผล */}
-      {filteredGames.length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {filteredGames.map((game, index) => {
-            const displayName = game.custom_name || game.name;
-            const displayImage = game.custom_image || game.image;
-            const imageUrl = displayImage ? displayImage : getGameImage(game.name, null);
+      {/* Grid แสดงผลเกมทั้งหมด */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        {filteredGames.map((game, index) => {
+          const displayName = game.custom_name || game.name;
+          const imageUrl = game.image || getGameImage(game.name);
 
-            return (
+          return (
             <div 
               key={index}
               onClick={() => setSelectedGame(game)}
               className="group bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col items-center relative overflow-hidden"
             >
-              <div className={`absolute top-0 left-0 w-full h-1 opacity-0 group-hover:opacity-100 transition-opacity 
-                  ${game.category === 'premium' ? 'bg-gradient-to-r from-red-500 to-pink-500' : 'bg-gradient-to-r from-blue-400 to-indigo-500'}`}>
-              </div>
-
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
               <div className="relative w-24 h-24 mb-4 rounded-xl overflow-hidden shadow-md group-hover:scale-105 transition-transform bg-slate-50">
                 {imageUrl ? (
-                  <Image 
-                    src={imageUrl} 
-                    alt={displayName} 
-                    fill 
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    className="object-cover"
-                  />
+                  <Image src={imageUrl} alt={displayName} fill className="object-cover" />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-                    <ImageOff size={24} className="mb-1 opacity-50" />
-                    <span className="text-xs">No Img</span>
+                    <ImageOff size={24} />
                   </div>
                 )}
               </div>
-              
-              <h3 className="font-medium text-slate-700 text-sm md:text-base text-center line-clamp-2 group-hover:text-blue-600 transition-colors px-2">
+              <h3 className="font-medium text-slate-700 text-sm md:text-base text-center line-clamp-2 px-2">
                 {displayName}
               </h3>
             </div>
           )})}
-        </div>
-      ) : (
-        <div className="text-center py-12 text-slate-500 bg-white/50 rounded-2xl border border-dashed border-slate-200 font-medium">
-          <ImageOff size={48} className="mx-auto mb-4 text-slate-300" />
-          ไม่พบ{category === 'premium' ? 'แอป' : 'เกม'}ที่คุณค้นหา
-        </div>
-      )}
+      </div>
 
+      {/* Modal ตัวเดิมตัวเดียว ใช้ร่วมกันหมด */}
       {selectedGame && (
         <ProductModal 
             game={selectedGame} 

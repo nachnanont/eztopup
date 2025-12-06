@@ -20,7 +20,7 @@ export default function ProductModal({ game, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const [showQrStep, setShowQrStep] = useState(false);
-  const [qrData, setQrData] = useState(null); // เก็บข้อมูล QR ส่วนต่าง
+  const [qrData, setQrData] = useState(null);
 
   const isPremium = game.category === 'premium';
 
@@ -64,31 +64,28 @@ export default function ProductModal({ game, onClose }) {
   const deductFromWallet = isBalanceEnough ? price : walletBalance;
   const missingAmount = price - deductFromWallet; 
 
-  // --- ขั้นตอนกดปุ่ม "ชำระเงิน / สแกนจ่าย" ---
   const handleNextStep = async () => {
       if (!selectedPackage) return alert("กรุณาเลือกแพคเกจ");
       const label = isPremium ? "Email ของคุณ" : "UID";
       if (!targetId) return alert(`กรุณากรอก ${label}`);
 
       if (isBalanceEnough) {
-          // เงินพอ -> ตัด Wallet เลย
           if(confirm(`ยืนยันชำระเงิน ${price.toLocaleString()} บาท?`)) {
               processPayment();
           }
       } else {
-          // เงินไม่พอ -> สร้าง QR Code ยอดส่วนต่าง
           setIsLoading(true);
           try {
               const res = await fetch('/api/topup/create-qr', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ amount: missingAmount }) // สร้าง QR ยอดขาด
+                  body: JSON.stringify({ amount: missingAmount })
               });
               const data = await res.json();
               if (!res.ok) throw new Error(data.error || 'สร้าง QR Code ไม่สำเร็จ');
 
-              setQrData(data); // เก็บ QR ที่ได้
-              setShowQrStep(true); // เปิดหน้าสแกน
+              setQrData(data);
+              setShowQrStep(true);
           } catch (error) {
               alert(error.message);
           } finally {
@@ -110,7 +107,6 @@ export default function ProductModal({ game, onClose }) {
           price: selectedPackage.price,
           uid: targetId,
           slip_image: null,
-          // ถ้าจ่ายแบบ Hybrid แปลว่าลูกค้าต้องโอนเงินมาแล้ว (Webhook ทำงานแล้ว)
           pay_method: isBalanceEnough ? 'wallet' : 'hybrid', 
           wallet_deduct: deductFromWallet 
         })
@@ -139,7 +135,7 @@ export default function ProductModal({ game, onClose }) {
 
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[85vh] md:h-[600px] overflow-hidden relative z-10 transition-all flex flex-col md:flex-row">
         
-        {/* ================= หน้า QR Code (แสดงผล QR จริง) ================= */}
+        {/* ================= หน้า QR Code (แก้ไขขนาดตรงนี้) ================= */}
         {showQrStep && qrData && (
             <div className="absolute inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b flex items-center justify-between shrink-0">
@@ -151,7 +147,7 @@ export default function ProductModal({ game, onClose }) {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center">
-                    <div className="w-full max-w-xs bg-slate-50 rounded-xl p-4 border border-slate-200 mb-6 space-y-3 text-center">
+                    <div className="w-full max-w-xs bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4 space-y-3 text-center">
                         <h4 className="font-bold text-slate-800 text-lg">{selectedPackage?.name}</h4>
                         <div className="border-t border-slate-200"></div>
                         <div className="flex justify-between text-slate-600 text-sm">
@@ -166,11 +162,14 @@ export default function ProductModal({ game, onClose }) {
                         </div>
                     </div>
                     
-                    <div className="bg-white p-3 rounded-xl shadow-lg border border-slate-100 relative">
-                        {/* แสดง QR Code ที่ได้จาก API */}
-                        <img src={qrData.qr_image} alt="QR Code" className="w-48 h-48 object-cover rounded-lg" />
+                    {/* แก้ไขขนาดรูปตรงนี้: ใช้ w-full max-w-sm เพื่อให้ใหญ่เต็มที่แต่ไม่ล้นจอ */}
+                    <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-200 relative w-full max-w-sm aspect-square flex items-center justify-center">
+                        <img 
+                            src={qrData.qr_image} 
+                            alt="QR Code" 
+                            className="w-full h-full object-contain rounded-lg" 
+                        />
                         
-                        {/* Loading Overlay ถ้ากำลังกดปุ่ม */}
                         {isLoading && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>}
                     </div>
                     <p className="text-slate-500 text-sm mt-4">กรุณาสแกน QR Code เพื่อชำระเงิน</p>
@@ -185,27 +184,20 @@ export default function ProductModal({ game, onClose }) {
             </div>
         )}
 
-        {/* ... (ส่วน Selection Screen เหมือนเดิมทุกอย่าง) ... */}
-        {/* Left Side */}
+        {/* ================= Selection Screen (ส่วนเลือกแพคเกจ เหมือนเดิม) ================= */}
         <div className="w-full md:w-1/3 bg-slate-50 p-4 md:p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100 relative shrink-0 h-[35%] md:h-full overflow-y-auto">
             <button onClick={onClose} className="absolute top-4 left-4 md:hidden p-2 bg-white rounded-full shadow-sm text-slate-400 z-10"><X size={20} /></button>
-            
             <div className="relative w-24 h-24 md:w-32 md:h-32 mb-3 rounded-2xl overflow-hidden shadow-lg bg-white shrink-0 mt-2 md:mt-6">
                 {imageUrl ? <Image src={imageUrl} alt={game.name} fill className="object-cover" /> : <div className="w-full h-full bg-slate-200" />}
             </div>
-            
             <h2 className="text-lg md:text-xl font-bold text-slate-800 text-center mb-4 px-2">{game.name}</h2>
-            
             <div className="w-full space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-1">
-                    {isPremium ? "Email / บัญชี" : "UID / Player ID"}
-                </label>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-1">{isPremium ? "Email / บัญชี" : "UID / Player ID"}</label>
                 {isPremium ? (
                     <input type="email" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="example@email.com" className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
                 ) : (
                     <input type="text" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="ระบุ UID..." className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm" />
                 )}
-                
                 {isPremium && (
                     <div className="bg-blue-100/50 p-2 rounded-lg border border-blue-100 flex gap-2">
                         <Info size={16} className="text-blue-600 shrink-0" />
@@ -213,7 +205,6 @@ export default function ProductModal({ game, onClose }) {
                     </div>
                 )}
             </div>
-
             <div className="mt-auto w-full pt-4 hidden md:block">
                 <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                     <span className="flex items-center gap-2 text-slate-500 text-sm"><Wallet size={16}/> คงเหลือ</span>
@@ -222,7 +213,6 @@ export default function ProductModal({ game, onClose }) {
             </div>
         </div>
 
-        {/* Right Side */}
         <div className="flex-1 flex flex-col min-h-0 bg-white relative">
             <div className="flex justify-between items-center p-4 border-b border-slate-100 shrink-0">
                 <h3 className="font-bold text-lg text-slate-700">เลือกแพคเกจ</h3>
@@ -231,7 +221,6 @@ export default function ProductModal({ game, onClose }) {
                     <Wallet size={12}/> ฿{walletBalance.toLocaleString()}
                 </div>
             </div>
-
             <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30">
                 {packages.length === 0 ? (
                     <div className="text-center text-slate-400 mt-10">ไม่พบแพคเกจสำหรับเกมนี้</div>
@@ -240,10 +229,7 @@ export default function ProductModal({ game, onClose }) {
                         {packages.map((pkg) => {
                             const isSelected = selectedPackage?.id === pkg.id;
                             return (
-                                <button key={pkg.id} onClick={() => setSelectedPackage(pkg)} 
-                                    className={`relative p-3 rounded-xl border-2 transition-all duration-200 flex flex-col items-start gap-1 text-left
-                                    ${isSelected ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm'}`}
-                                >
+                                <button key={pkg.id} onClick={() => setSelectedPackage(pkg)} className={`relative p-3 rounded-xl border-2 transition-all duration-200 flex flex-col items-start gap-1 text-left ${isSelected ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm'}`}>
                                     {isSelected && <div className="absolute top-2 right-2 text-blue-600"><Check size={16} strokeWidth={3} /></div>}
                                     <span className="font-bold text-sm text-slate-700 line-clamp-2 w-[90%]">{pkg.name}</span>
                                     {pkg.description && <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded line-clamp-1">{pkg.description}</span>}
@@ -254,20 +240,10 @@ export default function ProductModal({ game, onClose }) {
                     </div>
                 )}
             </div>
-
             <div className="p-4 border-t border-slate-100 bg-white shrink-0 z-10 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.1)]">
-                <button 
-                    disabled={!selectedPackage || !targetId || isLoading} 
-                    onClick={handleNextStep} 
-                    className={`w-full py-3 md:py-4 rounded-xl text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all
-                    ${isLoading || !selectedPackage || !targetId ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:-translate-y-0.5'}`}
-                >
-                    {isLoading ? <Loader2 className="animate-spin" /> : (isBalanceEnough ? <ShoppingCart size={20} /> : <QrCode size={20} />)}
-                    {isLoading ? 'กำลังประมวลผล...' : 
-                        (!selectedPackage ? 'เลือกแพคเกจ' : 
-                            (isBalanceEnough ? `ชำระเงิน ${price.toLocaleString()} บาท` : `สแกนจ่าย (${missingAmount.toLocaleString()} บ.)`)
-                        )
-                    }
+                <button disabled={!selectedPackage || !targetId || isLoading} onClick={handleNextStep} className={`w-full py-3 md:py-4 rounded-xl text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all ${isLoading || !selectedPackage || !targetId ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:-translate-y-0.5'}`}>
+                    {isBalanceEnough ? <ShoppingCart size={20} /> : <QrCode size={20} />}
+                    {isLoading ? 'กำลังประมวลผล...' : (!selectedPackage ? 'เลือกแพคเกจ' : (isBalanceEnough ? `ชำระเงิน ${price.toLocaleString()} บาท` : `สแกนจ่าย (${missingAmount.toLocaleString()} บ.)`))}
                 </button>
             </div>
         </div>

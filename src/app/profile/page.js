@@ -1,37 +1,36 @@
 'use client';
 
-// บังคับให้หน้านี้เป็น Dynamic (โหลดสดใหม่ทุกครั้ง) เพื่อป้องกัน Error ตอน Build
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Navbar from '@/components/Navbar';
 import { useRouter } from 'next/navigation';
-import { User, Wallet, History, Settings, Gift, CreditCard, ShoppingBag, Save, Loader2, X, CheckCircle, ArrowLeft } from 'lucide-react';
+import { User, Wallet, History, Settings, Gift, CreditCard, ShoppingBag, Save, Loader2, X, CheckCircle } from 'lucide-react';
 
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview'); // overview, history, settings
+  const [activeTab, setActiveTab] = useState('overview');
   
-  // Data States
   const [gameHistory, setGameHistory] = useState([]);
   const [topupHistory, setTopupHistory] = useState([]);
-
-  // Edit Profile Form
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', email: '' });
   const [isEditing, setIsEditing] = useState(false);
 
-  // Topup Modal State
+  // Topup State
   const [showTopupModal, setShowTopupModal] = useState(false);
-  const [topupAmount, setTopupAmount] = useState(null);
+  const [topupAmount, setTopupAmount] = useState(''); // เปลี่ยนเป็น string เพื่อให้พิมพ์แก้ได้ง่าย
   const [topupStep, setTopupStep] = useState(1);
   const [topupLoading, setTopupLoading] = useState(false);
-  const [qrData, setQrData] = useState(null); // เก็บข้อมูล QR ที่ได้จาก API
+  const [qrData, setQrData] = useState(null); // เก็บข้อมูล QR จาก API
 
   // Redeem State
   const [redeemPoints, setRedeemPoints] = useState(0);
+
+  // ยอดเงินแนะนำ (Preset)
+  const presetAmounts = [50, 100, 300, 500, 1000, 3500];
 
   useEffect(() => {
     fetchUserData();
@@ -48,7 +47,6 @@ export default function ProfilePage() {
     setUser(profile);
     setProfileForm({ full_name: profile.full_name || '', phone: profile.phone || '', email: profile.email || '' });
     
-    // Fetch Histories
     const { data: games } = await supabase.from('orders').select('*').eq('user_id', authUser.id).order('created_at', { ascending: false });
     setGameHistory(games || []);
     
@@ -79,7 +77,6 @@ export default function ProfilePage() {
 
     if (!confirm(`ยืนยันแลก ${redeemPoints} คะแนน เป็น ${creditToGet} เครดิต?`)) return;
 
-    // Update Database (ลดแต้ม + เพิ่มเงิน)
     const newPoints = user.points - redeemPoints;
     const newBalance = user.wallet_balance + creditToGet;
 
@@ -95,32 +92,40 @@ export default function ProfilePage() {
     }
   };
 
-  // ฟังก์ชันกด "ยืนยันยอดเงิน" เพื่อขอ QR Code
-  const handleTopupConfirm = async () => {
-    if (!topupAmount || topupAmount <= 0) return alert("กรุณาระบุยอดเงิน");
-    
-    setTopupLoading(true);
-    try {
-        // เรียก API สร้าง QR Code (ที่เราเพิ่งทำ)
-        const res = await fetch('/api/topup/create-qr', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: topupAmount })
-        });
+  // เริ่มกระบวนการขอ QR Code
+  const handleStartTopup = async () => {
+      const amount = Number(topupAmount);
+      if (isNaN(amount) || amount < 50 || amount > 9000) {
+          return alert("กรุณาระบุยอดเงินระหว่าง 50 - 9,000 บาท");
+      }
 
-        const data = await res.json();
+      setTopupLoading(true);
+      try {
+          // เรียก API สร้าง QR
+          const res = await fetch('/api/topup/create-qr', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: amount })
+          });
 
-        if (!res.ok) throw new Error(data.error || 'สร้างรายการไม่สำเร็จ');
+          const data = await res.json();
 
-        // ได้ QR มาแล้ว -> เก็บข้อมูลแล้วไปหน้าแสดงผล (Step 2)
-        setQrData(data); // { qr_image, amount_check, ... }
-        setTopupStep(2);
+          if (!res.ok) throw new Error(data.error || 'สร้างรายการไม่สำเร็จ');
 
-    } catch (error) {
-        alert('เกิดข้อผิดพลาด: ' + error.message);
-    } finally {
-        setTopupLoading(false);
-    }
+          setQrData(data); // เก็บรูป QR และยอดสตางค์
+          setTopupStep(2); // ไปหน้าสแกน
+
+      } catch (error) {
+          alert('เกิดข้อผิดพลาด: ' + error.message);
+      } finally {
+          setTopupLoading(false);
+      }
+  };
+
+  const handleConfirmPayment = () => {
+      // ในระบบ QR อัตโนมัติ จริงๆ ไม่ต้องกดปุ่มนี้ก็ได้ถ้ามี Webhook
+      // แต่ถ้าจะให้ลูกค้ากดเพื่อความสบายใจ หรือเพื่อรีเช็คก็ได้
+      setTopupStep(3);
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>;
@@ -132,7 +137,7 @@ export default function ProfilePage() {
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="flex flex-col md:flex-row gap-8">
             
-            {/* Sidebar Menu */}
+            {/* Sidebar */}
             <div className="w-full md:w-64 shrink-0 space-y-4">
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 text-center">
                     <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3 text-blue-600 border border-blue-100">
@@ -152,7 +157,6 @@ export default function ProfilePage() {
                         </div>
                     </div>
                 </div>
-
                 <nav className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     <button onClick={() => setActiveTab('overview')} className={`w-full text-left px-6 py-4 flex items-center gap-3 transition-colors border-b border-slate-50 ${activeTab === 'overview' ? 'bg-blue-50 text-blue-600 font-bold border-l-4 border-l-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}>
                         <Wallet size={20} /> กระเป๋าเครดิต
@@ -172,24 +176,48 @@ export default function ProfilePage() {
                 {/* --- TAB: Overview --- */}
                 {activeTab === 'overview' && (
                     <div className="space-y-6">
-                        {/* เติมเครดิต */}
+                        {/* กล่องเติมเครดิต */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><CreditCard className="text-blue-600"/> เติมเครดิต</h3>
-                            <p className="text-slate-500 text-sm mb-6">เลือกจำนวนเงินที่ต้องการเติมเข้าระบบ (ระบบอัตโนมัติ 24 ชม.)</p>
-                            <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                                {[20, 50, 100, 300, 500, 1000, 3500].map(amount => (
+                            
+                            {/* ปุ่มเลือกราคา */}
+                            <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
+                                {presetAmounts.map(amount => (
                                     <button 
                                         key={amount}
-                                        onClick={() => { setTopupAmount(amount); setTopupStep(1); setShowTopupModal(true); }}
-                                        className="py-3 rounded-xl border border-slate-200 font-bold text-slate-700 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                        onClick={() => setTopupAmount(amount.toString())}
+                                        className={`py-2 rounded-xl border font-bold transition-all ${Number(topupAmount) === amount ? 'border-blue-500 bg-blue-50 text-blue-600 ring-2 ring-blue-200' : 'border-slate-200 text-slate-600 hover:border-blue-400'}`}
                                     >
                                         {amount.toLocaleString()}
                                     </button>
                                 ))}
                             </div>
+
+                            {/* ช่องกรอกราคาเอง */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-slate-600 mb-2">หรือระบุจำนวนเงิน (50 - 9,000 บาท)</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">฿</span>
+                                    <input 
+                                        type="number" 
+                                        value={topupAmount}
+                                        onChange={(e) => setTopupAmount(e.target.value)}
+                                        placeholder="ระบุยอดเงิน..."
+                                        className="w-full pl-10 pr-4 py-3 text-lg font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={() => { setTopupStep(1); setShowTopupModal(true); }}
+                                disabled={!topupAmount || Number(topupAmount) < 50 || Number(topupAmount) > 9000}
+                                className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-200 transition-all"
+                            >
+                                ดำเนินการเติมเงิน
+                            </button>
                         </div>
 
-                        {/* แลกคะแนน */}
+                        {/* กล่องแลกคะแนน */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><Gift className="text-amber-500"/> แลกคะแนนสะสม</h3>
                             <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6 flex justify-between items-center">
@@ -202,7 +230,6 @@ export default function ProfilePage() {
                                     <p className="font-bold text-amber-600">10 คะแนน = 1 เครดิต</p>
                                 </div>
                             </div>
-                            
                             <div className="flex gap-4 items-end">
                                 <div className="flex-1">
                                     <label className="text-sm font-medium text-slate-600 mb-2 block">จำนวนคะแนนที่ต้องการแลก</label>
@@ -234,56 +261,39 @@ export default function ProfilePage() {
                 {/* --- TAB: History --- */}
                 {activeTab === 'history' && (
                     <div className="space-y-8">
-                        {/* ประวัติการเติมเกม */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><ShoppingBag className="text-blue-600"/> ประวัติการสั่งซื้อสินค้า</h3>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm">
-                                    <thead>
-                                        <tr className="text-slate-400 border-b border-slate-100"><th className="pb-2">รายการ</th><th className="pb-2">ราคา</th><th className="pb-2">สถานะ</th><th className="pb-2 text-right">วันที่</th></tr>
-                                    </thead>
+                                    <thead><tr className="text-slate-400 border-b border-slate-100"><th className="pb-2">รายการ</th><th className="pb-2">ราคา</th><th className="pb-2">สถานะ</th><th className="pb-2 text-right">วันที่</th></tr></thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {gameHistory.map(item => (
                                             <tr key={item.id}>
                                                 <td className="py-3 font-medium text-slate-700">{item.package_name}</td>
-                                                <td className="py-3 text-blue-600 font-bold">฿{item.amount.toLocaleString()}</td>
-                                                <td className="py-3">
-                                                    <span className={`px-2 py-0.5 rounded text-xs ${item.status === 'success' ? 'bg-green-100 text-green-700' : item.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                        {item.status}
-                                                    </span>
-                                                </td>
+                                                <td className="py-3 text-blue-600 font-bold">฿{item.amount}</td>
+                                                <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${item.status === 'success' ? 'bg-green-100 text-green-700' : item.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.status}</span></td>
                                                 <td className="py-3 text-right text-slate-400">{new Date(item.created_at).toLocaleDateString('th-TH')}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
-                                {gameHistory.length === 0 && <p className="text-center text-slate-400 py-4">ยังไม่มีประวัติการสั่งซื้อ</p>}
                             </div>
                         </div>
-
-                        {/* ประวัติการเติมเครดิต */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><CreditCard className="text-green-600"/> ประวัติการเติมเครดิต</h3>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm">
-                                    <thead>
-                                        <tr className="text-slate-400 border-b border-slate-100"><th className="pb-2">ยอดเงิน</th><th className="pb-2">สถานะ</th><th className="pb-2 text-right">วันที่</th></tr>
-                                    </thead>
+                                    <thead><tr className="text-slate-400 border-b border-slate-100"><th className="pb-2">ยอดเงิน</th><th className="pb-2">สถานะ</th><th className="pb-2 text-right">วันที่</th></tr></thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {topupHistory.map(item => (
                                             <tr key={item.id}>
                                                 <td className="py-3 text-green-600 font-bold">+฿{item.amount.toLocaleString()}</td>
-                                                <td className="py-3">
-                                                    <span className={`px-2 py-0.5 rounded text-xs ${item.status === 'success' ? 'bg-green-100 text-green-700' : item.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                        {item.status}
-                                                    </span>
-                                                </td>
+                                                <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${item.status === 'success' ? 'bg-green-100 text-green-700' : item.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.status}</span></td>
                                                 <td className="py-3 text-right text-slate-400">{new Date(item.created_at).toLocaleDateString('th-TH')}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
-                                {topupHistory.length === 0 && <p className="text-center text-slate-400 py-4">ยังไม่มีประวัติการเติมเครดิต</p>}
                             </div>
                         </div>
                     </div>
@@ -293,44 +303,13 @@ export default function ProfilePage() {
                 {activeTab === 'settings' && (
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                         <h3 className="font-bold text-lg text-slate-800 mb-6 flex items-center gap-2"><Settings className="text-slate-600"/> แก้ไขข้อมูลส่วนตัว</h3>
-                        
                         <div className="space-y-4 max-w-md">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-600 mb-1">ชื่อ - นามสกุล</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                                    value={profileForm.full_name}
-                                    onChange={(e) => setProfileForm({...profileForm, full_name: e.target.value})}
-                                    disabled={!isEditing}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-600 mb-1">เบอร์โทรศัพท์</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                                    value={profileForm.phone}
-                                    onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})}
-                                    disabled={!isEditing}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-600 mb-1">อีเมล (แก้ไขไม่ได้)</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full px-4 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
-                                    value={profileForm.email}
-                                    disabled
-                                />
-                            </div>
-
+                            <div><label className="block text-sm font-medium text-slate-600 mb-1">ชื่อ - นามสกุล</label><input type="text" className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50" value={profileForm.full_name} onChange={(e) => setProfileForm({...profileForm, full_name: e.target.value})} disabled={!isEditing} /></div>
+                            <div><label className="block text-sm font-medium text-slate-600 mb-1">เบอร์โทรศัพท์</label><input type="text" className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50" value={profileForm.phone} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} disabled={!isEditing} /></div>
+                            <div><label className="block text-sm font-medium text-slate-600 mb-1">อีเมล (แก้ไขไม่ได้)</label><input type="text" className="w-full px-4 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed" value={profileForm.email} disabled /></div>
                             <div className="pt-4">
                                 {isEditing ? (
-                                    <div className="flex gap-3">
-                                        <button onClick={handleUpdateProfile} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2"><Save size={18}/> บันทึก</button>
-                                        <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300">ยกเลิก</button>
-                                    </div>
+                                    <div className="flex gap-3"><button onClick={handleUpdateProfile} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2"><Save size={18}/> บันทึก</button><button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300">ยกเลิก</button></div>
                                 ) : (
                                     <button onClick={() => setIsEditing(true)} className="px-6 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 font-medium">แก้ไขข้อมูล</button>
                                 )}
@@ -338,94 +317,67 @@ export default function ProfilePage() {
                         </div>
                     </div>
                 )}
-
             </div>
         </div>
       </div>
 
-      {/* --- Topup Modal (ปรับปรุงใหม่) --- */}
+      {/* --- Topup Modal (Popup ยืนยัน & QR Code) --- */}
       {showTopupModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
             <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-slate-700">เติมเครดิต {topupAmount?.toLocaleString()} บาท</h3>
+                    <h3 className="font-bold text-slate-700">เติมเครดิต {Number(topupAmount).toLocaleString()} บาท</h3>
                     <button onClick={() => setShowTopupModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
                 </div>
                 
                 <div className="p-6 flex flex-col items-center">
-                    
-                    {/* Step 1: กรอกยอดเงิน (ถ้าไม่ได้เลือกจากปุ่มข้างนอก) */}
                     {topupStep === 1 && (
-                       <div className="w-full space-y-4">
-                           <div className="relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">฿</span>
-                                <input 
-                                    type="number" 
-                                    value={topupAmount || ''}
-                                    onChange={(e) => setTopupAmount(Number(e.target.value))}
-                                    className="w-full pl-10 pr-4 py-3 text-2xl font-bold text-center border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    autoFocus
-                                />
-                           </div>
-                           <button 
-                                onClick={handleTopupConfirm} 
-                                disabled={topupLoading || !topupAmount}
-                                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg flex items-center justify-center gap-2"
-                           >
-                               {topupLoading ? <Loader2 className="animate-spin"/> : 'สร้าง QR Code'}
+                       <div className="text-center w-full">
+                           <p className="text-slate-600 mb-6">ยืนยันการสร้างรายการเติมเงิน?</p>
+                           <button onClick={handleStartTopup} disabled={topupLoading} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg flex items-center justify-center gap-2">
+                               {topupLoading ? <Loader2 className="animate-spin"/> : 'ยืนยันสร้าง QR Code'}
                            </button>
                        </div>
                     )}
                     
-                    {/* Step 2: แสดง QR Code (โหมด Auto) */}
                     {topupStep === 2 && qrData && (
-                        <div className="w-full space-y-6 text-center animate-in slide-in-from-right">
+                        <div className="space-y-6 text-center animate-in slide-in-from-right w-full">
                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                                <div className="text-slate-500 text-sm mb-1">ยอดที่ต้องโอน (กรุณาโอนให้ตรงเศษสตางค์)</div>
+                                <div className="text-slate-500 text-sm mb-1">ยอดที่ต้องโอน (รวมเศษสตางค์)</div>
                                 <div className="text-3xl font-bold text-blue-600">฿{qrData.amount_check.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                                <div className="text-xs text-red-500 mt-1">*หากไม่ตรงเศษสตางค์ ระบบจะไม่เติมเงินให้อัตโนมัติ</div>
+                                <div className="text-xs text-red-500 mt-1 font-medium animate-pulse">*กรุณาโอนยอดนี้ให้เป๊ะ เพื่อระบบอัตโนมัติ</div>
                             </div>
 
                             <div className="relative w-64 h-64 mx-auto bg-white p-2 rounded-xl shadow-md border border-slate-200">
-                                 {/* รูป QR Code Base64 */}
-                                 <img src={qrData.qr_image} alt="QR Code" className="w-full h-full object-cover rounded-lg" />
+                                {/* แสดง QR จริงจาก API */}
+                                <img src={qrData.qr_image} alt="QR Code" className="w-full h-full object-cover rounded-lg" />
+                            </div>
+                            
+                            <div className="text-sm text-slate-400">
+                                ⏳ กรุณาโอนภายใน: {Math.floor(qrData.time_out / 60)} นาที
                             </div>
 
-                            <p className="text-slate-500 text-xs">
-                                เมื่อโอนเงินเสร็จแล้ว ระบบจะตรวจสอบและเติมเครดิตให้ภายใน 1-2 นาที
-                            </p>
-
-                            <button 
-                                onClick={() => setTopupStep(3)}
-                                className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
-                            >
-                                ฉันโอนเงินแล้ว
+                            <button onClick={handleConfirmPayment} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg">
+                                ชำระเงินเรียบร้อยแล้ว
                             </button>
                         </div>
                     )}
-
-                    {/* Step 3: หน้าแจ้งเตือนหลังโอน */}
+                    
                     {topupStep === 3 && (
-                        <div className="text-center py-8 animate-in fade-in">
+                        <div className="text-center py-8">
                             <CheckCircle size={64} className="text-green-500 mx-auto mb-4 animate-bounce" />
-                            <h3 className="text-xl font-bold text-slate-800 mb-2">รอตรวจสอบยอดเงิน</h3>
-                            <p className="text-slate-500 text-sm mb-6">ระบบกำลังเช็คยอดเงินของคุณ...</p>
-                            
-                            <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700 mb-6 text-left flex gap-2 items-start">
-                                <Info size={16} className="shrink-0 mt-0.5"/>
-                                <span>หากยอดเงินไม่เข้าภายใน 5 นาที กรุณาติดต่อแอดมินผ่านช่องแชท หรือ Line: @eztopup</span>
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">แจ้งชำระเงินเรียบร้อย</h3>
+                            <p className="text-slate-500 text-sm mb-6">ระบบกำลังตรวจสอบยอดเงินอัตโนมัติ<br/>เครดิตจะเข้ากระเป๋าภายใน 1-2 นาทีครับ</p>
+                            <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700 mb-6">
+                                ติดปัญหา? ติดต่อ Line: @eztopup
                             </div>
-
-                            <button onClick={() => { setShowTopupModal(false); fetchUserData(); }} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg">
-                                ตกลง
-                            </button>
+                            <button onClick={() => { setShowTopupModal(false); fetchUserData(); }} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">ปิดหน้าต่าง</button>
                         </div>
                     )}
                 </div>
             </div>
         </div>
       )}
-
     </div>
   );
 }

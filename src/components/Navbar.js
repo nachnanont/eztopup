@@ -72,24 +72,7 @@ function NavbarContent() {
         </div>
 
         {/* Menu */}
-        <div className="hidden md:flex items-center justify-center flex-1 gap-8 text-sm font-medium">
-          <Link 
-            href="/?category=game" 
-            className={`transition-colors px-3 py-2 rounded-full ${
-                currentCategory !== 'premium' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-500 hover:text-blue-600'
-            }`}
-          >
-            เติมเกม
-          </Link>
-          {/* <Link 
-            href="/?category=premium" 
-            className={`transition-colors px-3 py-2 rounded-full ${
-                currentCategory === 'premium' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-500 hover:text-blue-600'
-            }`}
-          >
-            แอปพรีเมียม
-          </Link> */}
-        </div>
+        
 
         {/* Right Side */}
         <div className="flex items-center justify-end gap-4 w-48">

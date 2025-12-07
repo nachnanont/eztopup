@@ -1,21 +1,21 @@
+import createNextIntlPlugin from 'next-intl/plugin';
+
+const withNextIntl = createNextIntlPlugin('./src/i18n.js');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**.supabase.co', // อนุญาต Supabase ทุกโปรเจกต์
+        hostname: '**.supabase.co',
       },
       {
         protocol: 'https',
-        hostname: 'ttxvgxebknibhtvakczf.supabase.co', // ระบุโปรเจกต์คุณโดยเฉพาะ (เพื่อความชัวร์)
-      },
-      {
-        protocol: 'https',
-        hostname: 'middle-pay.com', // อนุญาตรูปจาก API เกม
+        hostname: 'middle-pay.com',
       }
     ],
   },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

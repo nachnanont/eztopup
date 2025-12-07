@@ -1,0 +1,16 @@
+{
+  "Navbar": {
+    "home": "Home",
+    "topup": "Top Up Game",
+    "premium": "Premium Apps",
+    "login": "Login",
+    "register": "Register",
+    "logout": "Logout"
+  },
+  "Home": {
+    "popular": "Popular Games",
+    "all_games": "All Games",
+    "search": "Search games...",
+    "not_found": "No games found"
+  }
+}

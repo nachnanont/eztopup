@@ -15,7 +15,8 @@ import {
   X,
   Wallet,
   MessageSquare,
-  User // <-- เพิ่ม User เข้ามาในรายการนี้ (โดยไม่ต้องมีจุด ...)
+  User, // <-- เพิ่ม User เข้ามาในรายการนี้ (โดยไม่ต้องมีจุด ...)
+  Newspaper
 } from 'lucide-react';
 
 export default function AdminLayout({ children }) {
@@ -105,6 +106,7 @@ export default function AdminLayout({ children }) {
     { name: 'จัดการคำสั่งซื้อ', icon: ShoppingBag, path: '/admin/orders' },
     { name: 'รายการเติมเงิน', icon: Wallet, path: '/admin/topups' },
     { name: 'จัดการสินค้า', icon: Gamepad2, path: '/admin/products' },
+    { name: 'อัปเดทข่าว', icon: Newspaper, path: '/admin/news' },
     { name: 'จัดการแบนเนอร์', icon: ImageIcon, path: '/admin/banners' },
   ];
 

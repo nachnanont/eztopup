@@ -72,7 +72,7 @@ export default function GameList({ products: initialProducts, category }) {
                 if (targetGame) {
                     setSelectedGame(targetGame);
                     // (Optional) ลบ query param ออกเพื่อให้ URL สวยงาม
-                    // window.history.replaceState(null, '', '/');
+                    window.history.replaceState(null, '', window.location.pathname);
                 }
             }
             // ---------------------------------------------

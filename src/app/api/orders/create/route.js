@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { sendAdminNotify } from '@/lib/notify';
 
 export async function POST(request) {
   const cookieStore = await cookies()
@@ -81,6 +82,25 @@ export async function POST(request) {
       .select().single();
 
     if (orderError) return NextResponse.json({ error: 'สร้าง Order ไม่ได้' }, { status: 500 });
+    
+
+    // --- 🔔 แจ้งเตือน Telegram ---
+    const notiMsg = `
+<b>🛍️ คำสั่งซื้อใหม่!</b>
+<b>สินค้า:</b> ${game_name}
+<b>แพคเกจ:</b> ${package_name}
+<b>ราคา:</b> ${packagePrice} บาท
+<b>วิธีชำระ:</b> ${pay_method}
+<b>User ID:</b> <code>${userId}</code>
+<b>Target:</b> <code>${target}</code>
+<b>สถานะ:</b> ${apiStatus === 'success' ? '✅ สำเร็จ (Auto)' : '⏳ รอตรวจสอบ'}
+    `.trim();
+    
+    // ส่งแบบไม่ต้องรอ (Fire and Forget)
+    sendAdminNotify(notiMsg); 
+    // ------------------------
+
+    
 
     return NextResponse.json({ success: true, order, newBalance });
 

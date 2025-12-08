@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { sendAdminNotify } from '@/lib/notify';
 
 export const dynamic = 'force-dynamic'; // บังคับไม่ให้ Cache
 
@@ -82,6 +83,19 @@ export async function POST(request) {
     }
 
     console.log(`✅ Topup Success User: ${userId}, Amount: ${amount}`);
+    // ... (หลังจาก update profiles เสร็จ) ...
+
+    console.log(`✅ Topup Success User: ${userId}, Amount: ${amount}`);
+
+    // --- 🔔 แจ้งเตือน Telegram ---
+    sendAdminNotify(`
+<b>💰 เงินเข้า! (TMW)</b>
+<b>ยอดเงิน:</b> ${amount} บาท
+<b>User ID:</b> <code>${userId}</code>
+<b>เวลา:</b> ${new Date().toLocaleString('th-TH')}
+    `.trim());
+    // ------------------------
+
 
     return NextResponse.json({ status: 1 });
 

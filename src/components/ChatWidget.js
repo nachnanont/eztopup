@@ -74,9 +74,27 @@ export default function ChatWidget() {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !roomId) return;
+
     const text = newMessage;
     setNewMessage('');
-    await supabase.from('messages').insert([{ room_id: roomId, sender_role: 'user', content: text }]);
+
+    // 1. บันทึกลง DB (เหมือนเดิม)
+    await supabase.from('messages').insert([{
+      room_id: roomId,
+      sender_role: 'user',
+      content: text
+    }]);
+
+    // 2. แจ้งเตือน Telegram (เพิ่มใหม่)
+    // เช็คก่อนว่าเป็น user ส่ง (กันแอดมินส่งแล้วแจ้งเตือนตัวเอง)
+    fetch('/api/notify/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            message: text,
+            sender: user?.username || user?.email || 'Guest'
+        })
+    });
   };
 
   // --- LOGIC การแสดงผล ---

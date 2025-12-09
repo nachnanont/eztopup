@@ -1,29 +1,24 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { Search, LogOut, User as UserIcon, Wallet, FileClock } from 'lucide-react'; 
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Search, LogOut, User as UserIcon, Wallet, FileClock, History } from 'lucide-react'; 
 import { supabase } from '@/lib/supabase';
-import { useLocale } from 'next-intl'; // 1. นำเข้า useLocale
 
-function NavbarContent() {
+export default function Navbar() {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentCategory = searchParams.get('category');
-  
-  // 2. ดึงภาษาปัจจุบัน
-  const locale = useLocale(); 
-
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     checkUser();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') checkUser();
+       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+         checkUser();
+       }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -31,8 +26,14 @@ function NavbarContent() {
   const checkUser = async () => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
+
       if (authUser) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', authUser.id).single();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+
         setUser(profile || null);
       } else {
         setUser(null);
@@ -47,17 +48,8 @@ function NavbarContent() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    router.push(`/${locale}/login`); // Redirect ตามภาษาปัจจุบัน
+    router.push('/login');
     router.refresh();
-  };
-
-  // 3. ฟังก์ชันสลับภาษา
-  const toggleLanguage = () => {
-    const nextLocale = locale === 'th' ? 'en' : 'th';
-    // แทนที่ /th เป็น /en หรือกลับกัน ใน URL ปัจจุบัน
-    // เช่น /th/profile -> /en/profile
-    const newPath = pathname.replace(`/${locale}`, `/${nextLocale}`);
-    router.push(newPath);
   };
 
   return (
@@ -65,7 +57,7 @@ function NavbarContent() {
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         
         {/* Logo */}
-        <div className="flex-shrink-0 w-48">
+        <div className="flex-shrink-0">
           <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="relative w-8 h-8 md:w-10 md:h-10">
                 <Image src="/logo.png" alt="EZ Topup" fill className="object-contain" />
@@ -76,91 +68,72 @@ function NavbarContent() {
           </Link>
         </div>
 
-        {/* Menu */}
-        <div className="hidden md:flex items-center justify-center flex-1 gap-8 text-sm font-medium">
-          <Link 
-            href={`/?category=game`} 
-            className={`transition-colors px-3 py-2 rounded-full ${
-                currentCategory !== 'premium' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-500 hover:text-blue-600'
-            }`}
-          >
-            {locale === 'th' ? 'เติมเกม' : 'Top Up'}
-          </Link>
-          <Link 
-            href={`/?category=premium`} 
-            className={`transition-colors px-3 py-2 rounded-full ${
-                currentCategory === 'premium' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-500 hover:text-blue-600'
-            }`}
-          >
-            {locale === 'th' ? 'แอปพรีเมียม' : 'Premium Apps'}
-          </Link>
-        </div>
+        {/* Spacer (ดันเมนูขวาไปสุดขอบ) */}
+        <div className="flex-1"></div>
 
-        {/* Right Side */}
-        <div className="flex items-center justify-end gap-3 w-auto">
-          
-          {/* User Section */}
+        {/* Right Side: User Menu */}
+        <div className="flex items-center justify-end gap-3">
           {loading ? (
-            <div className="w-8 h-8 bg-slate-100 rounded-full animate-pulse"></div>
+            <div className="w-24 h-8 bg-slate-100 rounded-full animate-pulse"></div>
           ) : user ? (
-            <div className="flex items-center gap-2">
-                <Link href="/profile" className="flex items-center bg-white border border-slate-200 rounded-full p-1 pr-3 shadow-sm gap-2 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
-                    <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
-                        <UserIcon size={14} />
-                    </div>
-                    <div className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-blue-600">
-                        <Wallet size={12} strokeWidth={2.5} />
-                        <span>฿{(user.wallet_balance || 0).toLocaleString()}</span>
-                    </div>
+            <div className="flex items-center gap-2 md:gap-4">
+                
+                {/* 1. ปุ่ม Wallet (โชว์ยอดเงิน + กดเติมได้) */}
+                <Link 
+                    href="/profile" 
+                    className="flex items-center gap-2 bg-blue-50 text-blue-600 px-4 py-2 rounded-xl hover:bg-blue-100 transition-all border border-blue-100"
+                    title="เติมเครดิต"
+                >
+                    <Wallet size={18} />
+                    <span className="font-bold text-sm md:text-base">฿{(user.wallet_balance || 0).toLocaleString()}</span>
                 </Link>
-                <Link href="/history" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full">
-                    <FileClock size={20} />
+
+                {/* 2. ปุ่มประวัติการเติมเงิน */}
+                <Link 
+                    href="/history"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-full transition-all relative group"
+                    title="ประวัติการสั่งซื้อ"
+                >
+                    <History size={22} />
+                    {/* Tooltip */}
+                    <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] bg-slate-800 text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                        ประวัติ
+                    </span>
                 </Link>
-                <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full">
-                    <LogOut size={20} />
+
+                {/* 3. ปุ่ม Profile */}
+                <Link 
+                    href="/profile"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-full transition-all relative group"
+                    title="ข้อมูลส่วนตัว"
+                >
+                    <UserIcon size={22} />
+                    <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] bg-slate-800 text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                        โปรไฟล์
+                    </span>
+                </Link>
+
+                {/* เส้นคั่น */}
+                <div className="w-px h-6 bg-slate-200"></div>
+
+                {/* 4. ปุ่ม Logout */}
+                <button 
+                    onClick={handleLogout}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all relative group"
+                    title="ออกจากระบบ"
+                >
+                    <LogOut size={22} />
                 </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Link href="/login" className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-blue-600 hidden sm:block">
-                {locale === 'th' ? 'เข้าสู่ระบบ' : 'Login'}
-              </Link>
-              <Link href="/register" className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-full hover:bg-blue-700 shadow-sm">
-                {locale === 'th' ? 'สมัครสมาชิก' : 'Register'}
-              </Link>
+              <Link href="/login" className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">เข้าสู่ระบบ</Link>
+              <Link href="/register" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-full hover:bg-blue-700 shadow-md shadow-blue-200 transition-all">สมัครสมาชิก</Link>
             </div>
           )}
-
-          {/* 4. ปุ่มเปลี่ยนภาษา (แบบใช้รูปภาพ) */}
-          <button 
-            onClick={toggleLanguage}
-            className="ml-1 w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 transition-all shadow-sm border border-slate-200 overflow-hidden"
-            title={locale === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
-          >
-            {/* Logic: 
-                - ถ้าตอนนี้เป็นไทย (th) -> ให้โชว์รูปธงอังกฤษ (เพื่อให้กดเปลี่ยน)
-                - ถ้าตอนนี้เป็นอังกฤษ (en) -> ให้โชว์รูปธงไทย
-            */}
-            <Image 
-                src={locale === 'th' ? '/flag-en.png' : '/flag-th.png'} 
-                alt="Language" 
-                width={38} 
-                height={38} 
-                className="object-cover"
-            />
-          </button>
-
         </div>
 
       </div>
     </nav>
-  );
-}
-
-export default function Navbar() {
-  return (
-    <Suspense fallback={<nav className="h-16 bg-white/80 border-b border-slate-100"></nav>}>
-      <NavbarContent />
-    </Suspense>
   );
 }

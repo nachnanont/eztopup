@@ -2,20 +2,32 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Search, Edit, User, Wallet, History, X, Save, Gift } from 'lucide-react';
+import { Search, Edit, User, Shield, BadgeCheck, X, Save, Lock } from 'lucide-react';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // เก็บข้อมูลคนล็อกอินปัจจุบัน (Me)
+  const [myProfile, setMyProfile] = useState(null);
+
   // Modal Edit User
   const [editingUser, setEditingUser] = useState(null);
   const [editForm, setEditForm] = useState({});
 
   useEffect(() => {
+    fetchMyProfile();
     fetchUsers();
   }, []);
+
+  const fetchMyProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+          const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+          setMyProfile(data);
+      }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -34,7 +46,8 @@ export default function AdminUsers() {
         wallet_balance: user.wallet_balance, 
         points: user.points,
         full_name: user.full_name || '',
-        phone: user.phone || ''
+        phone: user.phone || '',
+        role: user.role || 'user'
     });
   };
 
@@ -45,7 +58,8 @@ export default function AdminUsers() {
             wallet_balance: Number(editForm.wallet_balance),
             points: Number(editForm.points),
             full_name: editForm.full_name,
-            phone: editForm.phone
+            phone: editForm.phone,
+            role: editForm.role // จะอัปเดต role ด้วย
         })
         .eq('id', editingUser.id);
 
@@ -61,6 +75,9 @@ export default function AdminUsers() {
     (u.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // เช็คว่าเป็น Owner หรือไม่
+  const isOwner = myProfile?.role === 'owner';
 
   return (
     <div>
@@ -84,6 +101,7 @@ export default function AdminUsers() {
             <thead className="bg-slate-50 border-b text-slate-500 text-sm">
                 <tr>
                     <th className="p-4">User</th>
+                    <th className="p-4">ระดับ (Role)</th>
                     <th className="p-4">ชื่อ / เบอร์โทร</th>
                     <th className="p-4">เครดิต</th>
                     <th className="p-4">คะแนน</th>
@@ -96,6 +114,19 @@ export default function AdminUsers() {
                         <td className="p-4">
                             <div className="font-bold text-slate-800">{user.username}</div>
                             <div className="text-xs text-slate-400">{user.email}</div>
+                        </td>
+                        <td className="p-4">
+                            {user.role === 'admin' || user.role === 'owner' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-600">
+                                    <Shield size={12}/> {user.role}
+                                </span>
+                            ) : user.role === 'reseller' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-600">
+                                    <BadgeCheck size={12}/> ตัวแทน
+                                </span>
+                            ) : (
+                                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">สมาชิกทั่วไป</span>
+                            )}
                         </td>
                         <td className="p-4">
                             <div className="text-sm text-slate-700">{user.full_name || '-'}</div>
@@ -116,13 +147,35 @@ export default function AdminUsers() {
 
       {/* Edit User Modal */}
       {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
                 <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                     <h3 className="font-bold text-slate-700">แก้ไขข้อมูล: {editingUser.username}</h3>
                     <button onClick={() => setEditingUser(null)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
                 </div>
                 <div className="p-6 space-y-4">
+                    
+                    {/* --- ส่วนเลือก Role (ล็อคถ้าไม่ใช่ Owner) --- */}
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
+                            ระดับสมาชิก (Role) {!isOwner && <Lock size={10} className="text-red-500"/>}
+                        </label>
+                        <select 
+                            className={`w-full border rounded-lg p-2 bg-white focus:ring-2 focus:ring-blue-500 outline-none
+                                ${!isOwner ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                            value={editForm.role}
+                            onChange={(e) => setEditForm({...editForm, role: e.target.value})}
+                            disabled={!isOwner} // <-- ล็อคตรงนี้
+                        >
+                            <option value="user">สมาชิกทั่วไป (User)</option>
+                            <option value="reseller">ตัวแทนจำหน่าย (Reseller)</option>
+                            <option value="admin">ผู้ดูแลระบบ (Admin)</option>
+                            {isOwner && <option value="owner">เจ้าของระบบ (Owner)</option>}
+                        </select>
+                        {!isOwner && <p className="text-[10px] text-red-500 mt-1">*เฉพาะ Owner เท่านั้นที่เปลี่ยนระดับสมาชิกได้</p>}
+                        {isOwner && <p className="text-[10px] text-slate-400 mt-1">*Reseller จะได้ราคาสินค้าพิเศษ</p>}
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 mb-1">เครดิต (Wallet)</label>

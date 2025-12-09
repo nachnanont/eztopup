@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, ShoppingCart, Loader2, QrCode, ArrowLeft, Wallet, Info, Mail } from 'lucide-react';
+import { X, Check, ShoppingCart, Loader2, QrCode, ArrowLeft, Wallet, Info, Mail, Server, ChevronDown } from 'lucide-react';
 import Image from 'next/image';
 import { getGameImage } from '@/lib/imageMap';
 import { useRouter } from 'next/navigation';
@@ -15,7 +15,10 @@ export default function ProductModal({ game, onClose }) {
   const [user, setUser] = useState(null);
   const [walletBalance, setWalletBalance] = useState(0);
 
+  // Input States
   const [targetId, setTargetId] = useState('');
+  const [serverId, setServerId] = useState(''); // เก็บค่าช่องที่ 2
+  
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -23,6 +26,14 @@ export default function ProductModal({ game, onClose }) {
   const [qrData, setQrData] = useState(null);
 
   const isPremium = game.category === 'premium';
+
+  // ดึง Config ช่องกรอก (ถ้ามี) หรือใช้ Default
+  const label1 = game.input_1_label || (isPremium ? "Email / บัญชี" : "UID / Player ID");
+  const placeholder1 = game.input_1_placeholder || (isPremium ? "example@email.com" : "ระบุ UID...");
+  
+  const label2 = game.input_2_label || null; // ถ้าเป็น null คือไม่มีช่อง 2
+  const placeholder2 = game.input_2_placeholder || "ระบุข้อมูล...";
+  const options2 = game.input_2_options || []; // ตัวเลือก Dropdown (ถ้ามี)
 
   useEffect(() => {
     setMounted(true);
@@ -34,17 +45,10 @@ export default function ProductModal({ game, onClose }) {
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
         setUser(profile);
         setWalletBalance(profile?.wallet_balance || 0);
-        
-        if (isPremium && profile?.email) {
-            setTargetId(profile.email);
-        }
+        if (isPremium && profile?.email) setTargetId(profile.email);
     }
   };
 
@@ -66,13 +70,11 @@ export default function ProductModal({ game, onClose }) {
 
   const handleNextStep = async () => {
       if (!selectedPackage) return alert("กรุณาเลือกแพคเกจ");
-      const label = isPremium ? "Email ของคุณ" : "UID";
-      if (!targetId) return alert(`กรุณากรอก ${label}`);
+      if (!targetId) return alert(`กรุณากรอก ${label1}`);
+      if (label2 && !serverId) return alert(`กรุณากรอก ${label2}`);
 
       if (isBalanceEnough) {
-          if(confirm(`ยืนยันชำระเงิน ${price.toLocaleString()} บาท?`)) {
-              processPayment();
-          }
+          if(confirm(`ยืนยันชำระเงิน ${price.toLocaleString()} บาท?`)) processPayment();
       } else {
           setIsLoading(true);
           try {
@@ -96,6 +98,9 @@ export default function ProductModal({ game, onClose }) {
 
   const processPayment = async () => {
     setIsLoading(true);
+    // รวมข้อมูล 2 ช่อง (Format: "UID | Server: 1234")
+    const finalTargetId = label2 ? `${targetId} | ${label2}: ${serverId}` : targetId;
+
     try {
       const res = await fetch('/api/orders/create', {
         method: 'POST',
@@ -105,7 +110,7 @@ export default function ProductModal({ game, onClose }) {
           product_id: game.id || game.product_id,
           package_name: selectedPackage.name,
           price: selectedPackage.price,
-          uid: targetId,
+          uid: finalTargetId, // ส่งข้อมูลที่รวมแล้วไป
           slip_image: null,
           pay_method: isBalanceEnough ? 'wallet' : 'hybrid', 
           wallet_deduct: deductFromWallet 
@@ -132,72 +137,74 @@ export default function ProductModal({ game, onClose }) {
   const modalContent = (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}></div>
-
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[85vh] md:h-[600px] overflow-hidden relative z-10 transition-all flex flex-col md:flex-row">
         
-        {/* ================= หน้า QR Code (แก้ไขขนาดตรงนี้) ================= */}
+        {/* ================= QR Code Screen ================= */}
         {showQrStep && qrData && (
             <div className="absolute inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300">
+                {/* ... (ส่วน QR Code เหมือนเดิม) ... */}
                 <div className="p-4 border-b flex items-center justify-between shrink-0">
-                    <button onClick={() => setShowQrStep(false)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold">
-                        <ArrowLeft size={20} /> ย้อนกลับ
-                    </button>
-                    <h3 className="font-bold text-slate-700">ชำระเงินส่วนต่าง</h3>
-                    <div className="w-8"></div>
+                    <button onClick={() => setShowQrStep(false)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold"><ArrowLeft size={20} /> ย้อนกลับ</button>
+                    <h3 className="font-bold text-slate-700">ชำระเงินส่วนต่าง</h3><div className="w-8"></div>
                 </div>
-
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center">
-                    <div className="w-full max-w-xs bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4 space-y-3 text-center">
+                    <div className="w-full max-w-xs bg-slate-50 rounded-xl p-4 border border-slate-200 mb-6 space-y-3 text-center">
                         <h4 className="font-bold text-slate-800 text-lg">{selectedPackage?.name}</h4>
                         <div className="border-t border-slate-200"></div>
-                        <div className="flex justify-between text-slate-600 text-sm">
-                            <span>ราคาทั้งหมด</span><span>฿{price.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-blue-600 text-sm">
-                            <span>ตัดจาก Wallet</span><span>- ฿{deductFromWallet.toLocaleString()}</span>
-                        </div>
-                        <div className="bg-white border border-blue-100 p-2 rounded-lg mt-2">
-                            <div className="text-xs text-slate-500">ยอดที่ต้องโอน (รวมเศษสตางค์)</div>
-                            <div className="text-2xl font-bold text-red-600">฿{qrData.amount_check.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                        </div>
+                        <div className="flex justify-between text-slate-600 text-sm"><span>ราคาทั้งหมด</span><span>฿{price.toLocaleString()}</span></div>
+                        <div className="flex justify-between text-blue-600 text-sm"><span>ตัดจาก Wallet</span><span>- ฿{deductFromWallet.toLocaleString()}</span></div>
+                        <div className="bg-white border border-blue-100 p-2 rounded-lg mt-2"><div className="text-xs text-slate-500">ยอดที่ต้องโอน (รวมเศษสตางค์)</div><div className="text-2xl font-bold text-red-600">฿{qrData.amount_check.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div></div>
                     </div>
-                    
-                    {/* แก้ไขขนาดรูปตรงนี้: ใช้ w-full max-w-sm เพื่อให้ใหญ่เต็มที่แต่ไม่ล้นจอ */}
-                    <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-200 relative w-full max-w-sm aspect-square flex items-center justify-center">
-                        <img 
-                            src={qrData.qr_image} 
-                            alt="QR Code" 
-                            className="w-full h-full object-contain rounded-lg" 
-                        />
-                        
-                        {isLoading && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>}
-                    </div>
+                    <div className="bg-white p-3 rounded-xl shadow-lg border border-slate-100 relative"><img src={qrData.qr_image} alt="QR Code" className="w-48 h-48 object-cover rounded-lg" />{isLoading && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>}</div>
                     <p className="text-slate-500 text-sm mt-4">กรุณาสแกน QR Code เพื่อชำระเงิน</p>
                 </div>
-
-                <div className="p-4 border-t bg-white shrink-0">
-                    <button onClick={processPayment} disabled={isLoading} className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700">
-                        {isLoading ? <Loader2 className="animate-spin" /> : <Check size={20} />}
-                        {isLoading ? 'กำลังส่งข้อมูล...' : 'ชำระเงินเรียบร้อย'}
-                    </button>
-                </div>
+                <div className="p-4 border-t bg-white shrink-0"><button onClick={processPayment} disabled={isLoading} className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700">{isLoading ? <Loader2 className="animate-spin" /> : <Check size={20} />}{isLoading ? 'กำลังส่งข้อมูล...' : 'ชำระเงินเรียบร้อย'}</button></div>
             </div>
         )}
 
-        {/* ================= Selection Screen (ส่วนเลือกแพคเกจ เหมือนเดิม) ================= */}
-        <div className="w-full md:w-1/3 bg-slate-50 p-4 md:p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100 relative shrink-0 h-[35%] md:h-full overflow-y-auto">
+        {/* ================= Selection Screen ================= */}
+        
+        {/* Left Side: รูป + ช่องกรอก */}
+        <div className="w-full md:w-1/3 bg-slate-50 p-4 md:p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100 relative shrink-0 h-[45%] md:h-full overflow-y-auto">
             <button onClick={onClose} className="absolute top-4 left-4 md:hidden p-2 bg-white rounded-full shadow-sm text-slate-400 z-10"><X size={20} /></button>
+            
             <div className="relative w-24 h-24 md:w-32 md:h-32 mb-3 rounded-2xl overflow-hidden shadow-lg bg-white shrink-0 mt-2 md:mt-6">
                 {imageUrl ? <Image src={imageUrl} alt={game.name} fill className="object-cover" /> : <div className="w-full h-full bg-slate-200" />}
             </div>
-            <h2 className="text-lg md:text-xl font-bold text-slate-800 text-center mb-4 px-2">{game.name}</h2>
-            <div className="w-full space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-1">{isPremium ? "Email / บัญชี" : "UID / Player ID"}</label>
-                {isPremium ? (
-                    <input type="email" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="example@email.com" className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
-                ) : (
-                    <input type="text" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="ระบุ UID..." className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm" />
+            
+            <h2 className="text-lg md:text-xl font-bold text-slate-800 text-center mb-4 px-2">{game.custom_name || game.name}</h2>
+            
+            <div className="w-full space-y-3">
+                {/* --- ช่องกรอกที่ 1 --- */}
+                <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1 flex items-center gap-1">
+                        {label1}
+                    </label>
+                    <input type="text" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder={placeholder1} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                </div>
+
+                {/* --- ช่องกรอกที่ 2 (แสดงเฉพาะเมื่อตั้งค่าไว้) --- */}
+                {label2 && (
+                    <div className="animate-in fade-in slide-in-from-top-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1 flex items-center gap-1">
+                            {label2} <Server size={12}/>
+                        </label>
+                        
+                        {/* ถ้ามี Options ให้แสดง Dropdown, ถ้าไม่มีให้แสดง Text Input */}
+                        {options2.length > 0 ? (
+                            <div className="relative">
+                                <select value={serverId} onChange={(e) => setServerId(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm appearance-none bg-white">
+                                    <option value="">-- กรุณาเลือก --</option>
+                                    {options2.map((opt, i) => (<option key={i} value={opt}>{opt}</option>))}
+                                </select>
+                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                            </div>
+                        ) : (
+                            <input type="text" value={serverId} onChange={(e) => setServerId(e.target.value)} placeholder={placeholder2} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm" />
+                        )}
+                    </div>
                 )}
+                
                 {isPremium && (
                     <div className="bg-blue-100/50 p-2 rounded-lg border border-blue-100 flex gap-2">
                         <Info size={16} className="text-blue-600 shrink-0" />
@@ -205,6 +212,7 @@ export default function ProductModal({ game, onClose }) {
                     </div>
                 )}
             </div>
+
             <div className="mt-auto w-full pt-4 hidden md:block">
                 <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                     <span className="flex items-center gap-2 text-slate-500 text-sm"><Wallet size={16}/> คงเหลือ</span>
@@ -213,13 +221,12 @@ export default function ProductModal({ game, onClose }) {
             </div>
         </div>
 
+        {/* Right Side (เหมือนเดิม) */}
         <div className="flex-1 flex flex-col min-h-0 bg-white relative">
             <div className="flex justify-between items-center p-4 border-b border-slate-100 shrink-0">
                 <h3 className="font-bold text-lg text-slate-700">เลือกแพคเกจ</h3>
                 <button onClick={onClose} className="hidden md:block p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={24} /></button>
-                <div className="md:hidden flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">
-                    <Wallet size={12}/> ฿{walletBalance.toLocaleString()}
-                </div>
+                <div className="md:hidden flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg"><Wallet size={12}/> ฿{walletBalance.toLocaleString()}</div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30">
                 {packages.length === 0 ? (
@@ -241,7 +248,7 @@ export default function ProductModal({ game, onClose }) {
                 )}
             </div>
             <div className="p-4 border-t border-slate-100 bg-white shrink-0 z-10 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.1)]">
-                <button disabled={!selectedPackage || !targetId || isLoading} onClick={handleNextStep} className={`w-full py-3 md:py-4 rounded-xl text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all ${isLoading || !selectedPackage || !targetId ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:-translate-y-0.5'}`}>
+                <button disabled={!selectedPackage || !targetId || (label2 && !serverId) || isLoading} onClick={handleNextStep} className={`w-full py-3 md:py-4 rounded-xl text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all ${isLoading || !selectedPackage || !targetId || (label2 && !serverId) ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:-translate-y-0.5'}`}>
                     {isBalanceEnough ? <ShoppingCart size={20} /> : <QrCode size={20} />}
                     {isLoading ? 'กำลังประมวลผล...' : (!selectedPackage ? 'เลือกแพคเกจ' : (isBalanceEnough ? `ชำระเงิน ${price.toLocaleString()} บาท` : `สแกนจ่าย (${missingAmount.toLocaleString()} บ.)`))}
                 </button>

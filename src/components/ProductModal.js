@@ -22,7 +22,20 @@ export default function ProductModal({ game, onClose }) {
   const [showQrStep, setShowQrStep] = useState(false);
   const [qrData, setQrData] = useState(null);
 
-  const isPremium = game.category === 'premium';
+  // --- 1. เตรียมข้อมูล (ย้ายขึ้นมาไว้บนสุด กันเหนียว) ---
+  const isPremium = game?.category === 'premium';
+  const imageUrl = game ? getGameImage(game.name, game.image) : null;
+
+  // เตรียม Packages (ประกาศตรงนี้เลย เพื่อให้ทุกส่วนในไฟล์มองเห็นแน่นอน)
+  const rawPackages = game?.services || game?.items || game?.products || [];
+  const packages = Array.isArray(rawPackages) ? rawPackages.map((pkg, index) => ({
+    ...pkg,
+    id: pkg.id || `pkg-${index}`,
+    name: pkg.custom_name || pkg.name || `Package ${index + 1}`,
+    price: Number(pkg.price || pkg.amount || 0),
+    description: pkg.description 
+  })) : [];
+  // ------------------------------------------------
 
   useEffect(() => {
     setMounted(true);
@@ -34,11 +47,7 @@ export default function ProductModal({ game, onClose }) {
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
         setUser(profile);
         setWalletBalance(profile?.wallet_balance || 0);
         
@@ -48,16 +57,8 @@ export default function ProductModal({ game, onClose }) {
     }
   };
 
+  // ถ้ายังไม่โหลด หรือไม่มีข้อมูลเกม ให้หยุดทำงาน (แต่ตัวแปร packages ถูกประกาศไปแล้วข้างบน เลยไม่ error)
   if (!mounted || !game) return null;
-
-  const rawPackages = game.services || game.items || game.products || [];
-  const packages = Array.isArray(rawPackages) ? rawPackages.map((pkg, index) => ({
-    ...pkg,
-    id: pkg.id || `pkg-${index}`,
-    name: pkg.name || `Package ${index + 1}`,
-    price: Number(pkg.price || pkg.amount || 0),
-    description: pkg.description 
-  })) : [];
 
   const price = selectedPackage?.price || 0;
   const isBalanceEnough = walletBalance >= price;
@@ -97,11 +98,17 @@ export default function ProductModal({ game, onClose }) {
   const processPayment = async () => {
     setIsLoading(true);
     try {
+      // รวมข้อมูล 2 ช่อง (ถ้ามี)
+      const label2 = game.input_2_label || null;
+      // เนื่องจากเราไม่ได้ใช้ state serverId ในเวอร์ชั่นนี้ (หรือใช้ targetId ตัวเดียว) 
+      // เพื่อความง่าย ถ้ามีการใช้ serverId ต้องประกาศ state เพิ่ม
+      // แต่ในโค้ดนี้เราใช้ targetId เป็นหลัก
+      
       const res = await fetch('/api/orders/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          game_name: game.name,
+          game_name: game.custom_name || game.name,
           product_id: game.id || game.product_id,
           package_name: selectedPackage.name,
           price: selectedPackage.price,
@@ -127,15 +134,12 @@ export default function ProductModal({ game, onClose }) {
     }
   };
 
-  const imageUrl = getGameImage(game.name, game.image);
-
   const modalContent = (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}></div>
 
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[85vh] md:h-[600px] overflow-hidden relative z-10 transition-all flex flex-col md:flex-row">
         
-        {/* ================= หน้า QR Code (แก้ไขขนาดตรงนี้) ================= */}
         {showQrStep && qrData && (
             <div className="absolute inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300">
                 <div className="p-4 border-b flex items-center justify-between shrink-0">
@@ -147,7 +151,7 @@ export default function ProductModal({ game, onClose }) {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center">
-                    <div className="w-full max-w-xs bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4 space-y-3 text-center">
+                    <div className="w-full max-w-xs bg-slate-50 rounded-xl p-4 border border-slate-200 mb-6 space-y-3 text-center">
                         <h4 className="font-bold text-slate-800 text-lg">{selectedPackage?.name}</h4>
                         <div className="border-t border-slate-200"></div>
                         <div className="flex justify-between text-slate-600 text-sm">
@@ -162,14 +166,8 @@ export default function ProductModal({ game, onClose }) {
                         </div>
                     </div>
                     
-                    {/* แก้ไขขนาดรูปตรงนี้: ใช้ w-full max-w-sm เพื่อให้ใหญ่เต็มที่แต่ไม่ล้นจอ */}
-                    <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-200 relative w-full max-w-sm aspect-square flex items-center justify-center">
-                        <img 
-                            src={qrData.qr_image} 
-                            alt="QR Code" 
-                            className="w-full h-full object-contain rounded-lg" 
-                        />
-                        
+                    <div className="bg-white p-3 rounded-xl shadow-lg border border-slate-100 relative">
+                        <img src={qrData.qr_image} alt="QR Code" className="w-48 h-48 object-cover rounded-lg" />
                         {isLoading && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>}
                     </div>
                     <p className="text-slate-500 text-sm mt-4">กรุณาสแกน QR Code เพื่อชำระเงิน</p>
@@ -184,7 +182,7 @@ export default function ProductModal({ game, onClose }) {
             </div>
         )}
 
-        {/* ================= Selection Screen (ส่วนเลือกแพคเกจ เหมือนเดิม) ================= */}
+        {/* Left Side */}
         <div className="w-full md:w-1/3 bg-slate-50 p-4 md:p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100 relative shrink-0 h-[35%] md:h-full overflow-y-auto">
             <button onClick={onClose} className="absolute top-4 left-4 md:hidden p-2 bg-white rounded-full shadow-sm text-slate-400 z-10"><X size={20} /></button>
             <div className="relative w-24 h-24 md:w-32 md:h-32 mb-3 rounded-2xl overflow-hidden shadow-lg bg-white shrink-0 mt-2 md:mt-6">
@@ -213,6 +211,7 @@ export default function ProductModal({ game, onClose }) {
             </div>
         </div>
 
+        {/* Right Side */}
         <div className="flex-1 flex flex-col min-h-0 bg-white relative">
             <div className="flex justify-between items-center p-4 border-b border-slate-100 shrink-0">
                 <h3 className="font-bold text-lg text-slate-700">เลือกแพคเกจ</h3>
@@ -221,6 +220,7 @@ export default function ProductModal({ game, onClose }) {
                     <Wallet size={12}/> ฿{walletBalance.toLocaleString()}
                 </div>
             </div>
+
             <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30">
                 {packages.length === 0 ? (
                     <div className="text-center text-slate-400 mt-10">ไม่พบแพคเกจสำหรับเกมนี้</div>
@@ -240,6 +240,7 @@ export default function ProductModal({ game, onClose }) {
                     </div>
                 )}
             </div>
+
             <div className="p-4 border-t border-slate-100 bg-white shrink-0 z-10 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.1)]">
                 <button disabled={!selectedPackage || !targetId || isLoading} onClick={handleNextStep} className={`w-full py-3 md:py-4 rounded-xl text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all ${isLoading || !selectedPackage || !targetId ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:-translate-y-0.5'}`}>
                     {isBalanceEnough ? <ShoppingCart size={20} /> : <QrCode size={20} />}

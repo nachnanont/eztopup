@@ -1,99 +1,112 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 
-export const dynamic = 'force-dynamic'; // บังคับให้ไม่ Cache
-
 export async function POST(request) {
   const cookieStore = await cookies();
-  const supabase = createServerClient(
+  
+  let supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     { cookies: { getAll() { return cookieStore.getAll() } } }
   );
 
   try {
-    // 1. เช็คว่า Config ครบไหม (กันลืมใส่ใน Vercel)
-    if (!process.env.TMWEASY_API_URL || !process.env.TMWEASY_USER) {
-        throw new Error("Server Config Missing: TMWEASY variables not found.");
-    }
+    const { amount } = await request.json();
 
-    const body = await request.json();
-    const { amount } = body;
-    
-    if (!amount) throw new Error("Invalid Amount");
+    // 1. ตรวจสอบ User
+    let user = null;
+    const { data: { user: cookieUser } } = await supabase.auth.getUser();
+    user = cookieUser;
 
-    // 2. เช็ค User
-    const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const authHeader = request.headers.get('Authorization');
+        if (authHeader) {
+            const token = authHeader.replace('Bearer ', '');
+            const supabaseJwt = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+                { global: { headers: { Authorization: `Bearer ${token}` } } }
+            );
+            const { data: { user: headerUser } } = await supabaseJwt.auth.getUser();
+            user = headerUser;
+        }
     }
 
-    console.log(`🚀 Starting Topup for User: ${user.id}, Amount: ${amount}`);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 3. สร้างรายการใน Database เราก่อน (สถานะ pending)
-    const { data: topup, error: dbError } = await supabase
-      .from('topups')
-      .insert([{
+    const refNo = `TOPUP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    // 2. บันทึก DB ครั้งแรก
+    await supabase.from('topups').insert([{
         user_id: user.id,
         amount: amount,
         status: 'pending',
-      }])
-      .select()
-      .single();
+        transaction_id: refNo,
+        provider: 'PayNoi'
+    }]);
 
-    if (dbError) throw new Error('Database Insert Error: ' + dbError.message);
+    // 3. ยิง API PayNoi
+    const payload = {
+        method: "create",
+        api_key: process.env.PAYMENT_API_KEY,
+        amount: amount,
+        ref1: refNo,
+        key_id: process.env.PAYMENT_KEY_ID,
+        account: process.env.PAYMENT_ACCOUNT,
+        type: process.env.PAYMENT_ACCOUNT_TYPE
+    };
 
-    // 4. ยิง Step 1: สร้าง ID Pay
-    const step1Url = `${process.env.TMWEASY_API_URL}?username=${process.env.TMWEASY_USER}&password=${process.env.TMWEASY_PASS}&amount=${amount}&ref1=${user.id}&con_id=${process.env.TMWEASY_CON_ID}&method=create_pay&ip=127.0.0.1`;
-    
-    console.log("📡 Calling TMW Step 1...");
-    const res1 = await axios.get(step1Url);
-    
-    if (!res1.data || res1.data.status !== 1) {
-        console.error("❌ TMW Step 1 Failed:", res1.data);
-        return NextResponse.json({ error: res1.data?.msg || 'Create Pay Failed (External API)' }, { status: 400 });
+    console.log("🚀 Sending to PayNoi:", payload);
+    const res = await axios.post(process.env.PAYMENT_API_URL, payload);
+    const responseData = res.data;
+
+    console.log("✅ PayNoi Response:", responseData);
+
+    if (String(responseData.status) !== '1') {
+        throw new Error(responseData.msg || 'PayNoi Error');
     }
 
-    const id_pay = res1.data.id_pay;
-    console.log("✅ Got ID Pay:", id_pay);
-
-    // 5. ยิง Step 2: ขอ QR Code
-    const step2Url = `${process.env.TMWEASY_API_URL}?username=${process.env.TMWEASY_USER}&password=${process.env.TMWEASY_PASS}&con_id=${process.env.TMWEASY_CON_ID}&id_pay=${id_pay}&type=01&promptpay_id=${process.env.TMWEASY_PROMPTPAY_ID}&method=detail_pay`;
+    // ==========================================
+    // 🛡️ โซนปลอดภัย (กันชน Error)
+    // ==========================================
     
-    console.log("📡 Calling TMW Step 2...");
-    const res2 = await axios.get(step2Url);
-
-    if (!res2.data || res2.data.status !== 1) {
-        console.error("❌ TMW Step 2 Failed:", res2.data);
-        return NextResponse.json({ error: res2.data?.msg || 'Get QR Failed (External API)' }, { status: 400 });
+    // พยายามอัปเดตยอดทศนิยม (ถ้าพัง ก็แค่ Log ไม่ให้แอปล่ม)
+    try {
+        const finalAmount = Number(responseData.amount);
+        const { error: updateError } = await supabase.from('topups').update({ amount: finalAmount }).eq('transaction_id', refNo);
+        if (updateError) console.error("⚠️ Update DB Warning:", updateError.message);
+    } catch (dbErr) {
+        console.error("⚠️ DB Update Failed:", dbErr.message);
     }
 
-    // 6. อัปเดตข้อมูลกลับลง Database
-    const amountCheck = Number(res2.data.amount_check) / 100;
-    
-    await supabase
-      .from('topups')
-      .update({ 
-        external_id: id_pay,
-        amount_check: amountCheck 
-      })
-      .eq('id', topup.id);
+    // พยายามคำนวณเวลา (ถ้าพัง ให้ใช้ 900 วิ)
+    let remainingSeconds = 900;
+    try {
+        // แปลง '2025-12-15 21:22:17' ให้เป็น format ที่ JS อ่านง่ายขึ้น (เติม T)
+        const safeDateString = responseData.expire_at.replace(' ', 'T'); 
+        const expireTime = new Date(safeDateString).getTime();
+        const now = new Date().getTime();
+        const calcSeconds = Math.floor((expireTime - now) / 1000);
+        if (!isNaN(calcSeconds) && calcSeconds > 0) {
+            remainingSeconds = calcSeconds;
+        }
+    } catch (dateErr) {
+        console.error("⚠️ Date Parse Failed:", dateErr.message);
+    }
 
-    console.log("✅ Topup Created Successfully");
-
-    // 7. ส่งข้อมูลกลับ
+    // 4. ส่งรูป QR กลับไป (สำคัญสุด)
     return NextResponse.json({
-        success: true,
-        qr_image: `data:image/png;base64,${res2.data.qr_image_base64}`,
-        amount_check: amountCheck,
-        time_out: res2.data.time_out
+        qr_image: responseData.qr_image_base64, // ส่งตรงๆ เพราะมี Header มาแล้ว
+        amount_check: Number(responseData.amount),
+        time_out: remainingSeconds
     });
 
   } catch (error) {
-    console.error("🔥 API Crash:", error);
-    // ส่ง JSON Error กลับไปเสมอ (ห้ามส่งค่าว่าง)
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    console.error("🔥 Critical Error:", error.message);
+    // ส่ง Error กลับไปบอกหน้าบ้าน
+    return NextResponse.json({ error: 'เกิดข้อผิดพลาด: ' + error.message }, { status: 500 });
   }
 }

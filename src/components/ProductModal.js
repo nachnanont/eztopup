@@ -2,14 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, ShoppingCart, Loader2, QrCode, ArrowLeft, Wallet, Info, Server, ChevronDown } from 'lucide-react';
+import { X, Check, ShoppingCart, Loader2, QrCode, ArrowLeft, Wallet, Info, Server, ChevronDown, RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-
-// ฟังก์ชันช่วยดึงรูปเกม (ถ้าไม่มีรูปให้ใช้รูป Placeholder หรือรูป Default)
-// ถ้าคุณมีไฟล์ imageMap.js ให้ import มาใช้ ถ้าไม่มีให้คอมเมนต์บรรทัดนี้ออกแล้วใช้รูปตรงๆ
-// import { getGameImage } from '@/lib/imageMap'; 
 
 export default function ProductModal({ game, onClose }) {
   const router = useRouter();
@@ -20,7 +16,7 @@ export default function ProductModal({ game, onClose }) {
 
   // Input States
   const [targetId, setTargetId] = useState('');
-  const [serverId, setServerId] = useState(''); // เก็บค่าช่องที่ 2
+  const [serverId, setServerId] = useState('');
   
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,17 +24,16 @@ export default function ProductModal({ game, onClose }) {
   // QR & Countdown States
   const [showQrStep, setShowQrStep] = useState(false);
   const [qrData, setQrData] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(900); // ตั้งค่าเริ่มต้น 900 วิ (15 นาที) ไว้เลย
 
   const isPremium = game?.category === 'premium';
 
-  // ดึง Config ช่องกรอก (ถ้ามี) หรือใช้ Default
   const label1 = game?.input_1_label || (isPremium ? "Email / บัญชี" : "UID / Player ID");
   const placeholder1 = game?.input_1_placeholder || (isPremium ? "example@email.com" : "ระบุ UID...");
   
-  const label2 = game?.input_2_label || null; // ถ้าเป็น null คือไม่มีช่อง 2
+  const label2 = game?.input_2_label || null;
   const placeholder2 = game?.input_2_placeholder || "ระบุข้อมูล...";
-  const options2 = game?.input_2_options || []; // ตัวเลือก Dropdown (ถ้ามี)
+  const options2 = game?.input_2_options || [];
 
   useEffect(() => {
     setMounted(true);
@@ -47,14 +42,14 @@ export default function ProductModal({ game, onClose }) {
     return () => { document.body.style.overflow = 'unset'; }
   }, []);
 
-  // 1. ตั้งเวลาเริ่มต้นเมื่อได้ QR
+  // ✅ แก้ไข 1: บังคับเริ่มนับถอยหลัง 15 นาทีทันทีที่เปิดหน้า QR (แก้ปัญหา 500 นาที)
   useEffect(() => {
-    if (showQrStep && qrData?.time_out) {
-        setTimeLeft(qrData.time_out);
+    if (showQrStep) {
+        setTimeLeft(900); // 15 นาที = 900 วินาที
     }
-  }, [showQrStep, qrData]);
+  }, [showQrStep]);
 
-  // 2. นับถอยหลังทุก 1 วินาที
+  // ✅ แก้ไข 2: ระบบนับถอยหลัง (Timer)
   useEffect(() => {
     if (!showQrStep || timeLeft <= 0) return;
     const timer = setInterval(() => {
@@ -63,7 +58,7 @@ export default function ProductModal({ game, onClose }) {
     return () => clearInterval(timer);
   }, [showQrStep, timeLeft]);
 
-  // 3. ระบบ Realtime ดักฟังการจ่ายเงิน
+  // ✅ แก้ไข 3: ระบบ Realtime (ดักฟังยอดเงิน)
   useEffect(() => {
     let channel;
     if (showQrStep && qrData?.transaction_id) {
@@ -80,6 +75,7 @@ export default function ProductModal({ game, onClose }) {
                     filter: `transaction_id=eq.${qrData.transaction_id}`
                 },
                 (payload) => {
+                    console.log("🔔 สถานะเปลี่ยน:", payload.new.status);
                     if (payload.new.status === 'success') {
                         handlePaymentSuccess(payload.new.amount);
                     }
@@ -109,17 +105,33 @@ export default function ProductModal({ game, onClose }) {
   };
 
   const handlePaymentSuccess = (amount) => {
-      // 1. ปิดหน้า QR
       setShowQrStep(false);
-      // 2. อัปเดตยอดเงินในกระเป๋า UI ทันที
       const addedAmount = Number(amount);
       setWalletBalance(prev => prev + addedAmount);
-      
-      alert(`✅ ได้รับยอดเงิน ${addedAmount.toLocaleString()} บาทเรียบร้อยแล้ว!\nระบบกำลังดำเนินการสั่งซื้อ...`);
-      
-      // 3. สั่งซื้อสินค้าต่อทันที (ถ้าต้องการ) หรือให้ลูกค้ากดเอง
-      // ในที่นี้เราจะให้ลูกค้ากดปุ่ม "ชำระเงิน" เองอีกครั้งเพื่อความชัวร์ หรือจะเรียก processPayment() เลยก็ได้
-      // processPayment(true); // <--- ถ้าจะให้ซื้อออโต้เลยให้เปิดบรรทัดนี้แล้วแก้ function processPayment ให้รับ parameter
+      alert(`✅ ได้รับยอดเงิน ${addedAmount.toLocaleString()} บาทเรียบร้อยแล้ว!`);
+  };
+
+  // ฟังก์ชันสำหรับปุ่ม "ตรวจสอบยอดเงิน" (Manual Check)
+  const manualCheckPayment = async () => {
+      setIsLoading(true);
+      try {
+        // เช็คสถานะจากฐานข้อมูลเราเอง
+        const { data } = await supabase
+            .from('topups')
+            .select('status, amount')
+            .eq('transaction_id', qrData.transaction_id)
+            .single();
+
+        if (data && data.status === 'success') {
+            handlePaymentSuccess(data.amount);
+        } else {
+            alert("⚠️ ยังไม่พบยอดเงินเข้าระบบ\n(หากโอนแล้ว กรุณารอสักครู่ ระบบกำลังดำเนินการ)");
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
   };
 
   if (!mounted || !game) return null;
@@ -148,7 +160,6 @@ export default function ProductModal({ game, onClose }) {
       } else {
           setIsLoading(true);
           try {
-              // ดึง Token เพื่อส่งไป Header (แก้เรื่อง Unauthorized ใน Localhost)
               const { data: { session } } = await supabase.auth.getSession();
               const accessToken = session?.access_token;
               
@@ -181,11 +192,9 @@ export default function ProductModal({ game, onClose }) {
 
   const processPayment = async () => {
     setIsLoading(true);
-    // รวมข้อมูล 2 ช่อง (Format: "UID | Server: 1234")
     const finalTargetId = label2 ? `${targetId} | ${label2}: ${serverId}` : targetId;
 
     try {
-      // ดึง Token
       const { data: { session } } = await supabase.auth.getSession();
       
       const res = await fetch('/api/orders/create', {
@@ -219,7 +228,6 @@ export default function ProductModal({ game, onClose }) {
     }
   };
 
-  // ใช้รูป Custom ถ้ามี หรือใช้รูปจาก Object
   const imageUrl = game.custom_image || game.image || "/images/placeholder.png"; 
 
   const modalContent = (
@@ -247,14 +255,10 @@ export default function ProductModal({ game, onClose }) {
                     </div>
                     
                     <div className="bg-white p-3 rounded-xl shadow-lg border border-slate-100 relative">
-                        {/* แสดง QR Code */}
                         <img src={qrData.qr_image} alt="QR Code" className="w-48 h-48 object-cover rounded-lg" />
-                        
-                        {/* โหลดดิ้งซ้อน QR (ถ้ามี) */}
                         {isLoading && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>}
                     </div>
 
-                    {/* ⏳ เวลานับถอยหลัง */}
                     <div className="mt-6 text-center">
                         <p className="text-slate-400 text-xs mb-1 uppercase tracking-wide font-semibold">Time Remaining</p>
                         <div className={`text-3xl font-mono font-bold tabular-nums tracking-wider ${timeLeft < 60 ? 'text-red-500 animate-pulse' : 'text-slate-700'}`}>
@@ -264,16 +268,18 @@ export default function ProductModal({ game, onClose }) {
                     </div>
 
                 </div>
-                {/* ปุ่ม Manual Check (เผื่อ Realtime ไม่ทำงาน) */}
+                
+                {/* ปุ่ม Manual Check (แก้ปัญหา Realtime ไม่เด้ง) */}
                 <div className="p-4 border-t bg-white shrink-0">
-                    <button onClick={() => window.location.reload()} className="w-full py-3 rounded-xl border border-slate-200 text-slate-500 font-bold hover:bg-slate-50 transition-colors text-sm">
-                        หากหน้านี้ไม่เปลี่ยนอัตโนมัติ กดที่นี่เพื่อรีเฟรช
+                    <button onClick={manualCheckPayment} className="w-full py-3 rounded-xl bg-blue-50 text-blue-600 font-bold hover:bg-blue-100 transition-colors text-sm flex items-center justify-center gap-2">
+                        {isLoading ? <Loader2 className="animate-spin" size={18}/> : <RefreshCw size={18}/>}
+                        ตรวจสอบยอดเงิน / รีเฟรช
                     </button>
                 </div>
             </div>
         )}
 
-        {/* ================= Selection Screen ================= */}
+        {/* ... (ส่วน Left Side และ Right Side เหมือนเดิม) ... */}
         
         {/* Left Side: รูป + ช่องกรอก */}
         <div className="w-full md:w-1/3 bg-slate-50 p-4 md:p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100 relative shrink-0 h-[45%] md:h-full overflow-y-auto">
@@ -286,7 +292,6 @@ export default function ProductModal({ game, onClose }) {
             <h2 className="text-lg md:text-xl font-bold text-slate-800 text-center mb-4 px-2">{game.custom_name || game.name}</h2>
             
             <div className="w-full space-y-3">
-                {/* --- ช่องกรอกที่ 1 --- */}
                 <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1 flex items-center gap-1">
                         {label1}
@@ -294,14 +299,11 @@ export default function ProductModal({ game, onClose }) {
                     <input type="text" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder={placeholder1} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm font-medium transition-all hover:border-blue-300" />
                 </div>
 
-                {/* --- ช่องกรอกที่ 2 (แสดงเฉพาะเมื่อตั้งค่าไว้) --- */}
                 {label2 && (
                     <div className="animate-in fade-in slide-in-from-top-1">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1 flex items-center gap-1">
                             {label2} <Server size={12}/>
                         </label>
-                        
-                        {/* ถ้ามี Options ให้แสดง Dropdown, ถ้าไม่มีให้แสดง Text Input */}
                         {options2.length > 0 ? (
                             <div className="relative">
                                 <select value={serverId} onChange={(e) => setServerId(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 text-sm appearance-none bg-white cursor-pointer hover:border-blue-300 transition-all">
